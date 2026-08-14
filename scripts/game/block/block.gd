@@ -3,6 +3,12 @@ class_name Block
 
 @export var texture_to_show: Texture2D = null
 @export var node_name: String = ""
+@export var size_scale: float = 1.0
+
+## 方块定义引用（null = 未走注册表的临时方块）
+var def: BlockDef
+## 所在格子坐标
+var cell: Vector2i = Vector2i.ZERO
 
 @onready var animation_tree: AnimationTree = $AnimationTree
 @onready var states: Node = $States
@@ -26,6 +32,14 @@ func _ready() -> void:
 	change_state(fall_state)
 
 
+## 由注册表定义初始化（在 add_child 之前调用，_ready 时才会用到贴图）
+func setup_from_def(d: BlockDef, c: Vector2i) -> void:
+	def = d
+	cell = c
+	if d != null:
+		texture_to_show = d.get_texture(0)
+
+
 func setup_properties() -> void:
 	setup_name()
 	setup_texture()
@@ -33,6 +47,7 @@ func setup_properties() -> void:
 
 func setup_texture() -> void:
 	self.get_node("Sprite2D").texture = texture_to_show
+	self.get_node("Sprite2D").scale = Vector2.ONE * size_scale
 	var particles: GPUParticles2D = self.get_node("GPUParticles2D")
 	var atlas_texture := particles.texture as AtlasTexture
 

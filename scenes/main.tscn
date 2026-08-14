@@ -5,6 +5,7 @@
 [ext_resource type="Script" uid="uid://b7uygkclt70mv" path="res://scripts/camera/camera.gd" id="2_0wfyh"]
 [ext_resource type="Texture2D" uid="uid://bt0q3od46k23u" path="res://assets/tilemap/tile_022.png" id="3_sugp2"]
 [ext_resource type="PackedScene" uid="uid://b4x7pm8lc4e48" path="res://scenes/block.tscn" id="3_tipki"]
+[ext_resource type="PackedScene" path="res://scenes/ore_block.tscn" id="4_ore"]
 [ext_resource type="Script" uid="uid://d3clejmktvs1s" path="res://scripts/button/move_back.gd" id="4_jyhfs"]
 [ext_resource type="Texture2D" uid="uid://djp2ui6a0bhup" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_Icons.png" id="5_tbgi4"]
 [ext_resource type="Texture2D" uid="uid://cl3g57ofkwtlc" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_Selectors.png" id="5_tipki"]
@@ -60,6 +61,7 @@ script = ExtResource("1_o6xl0")
 script = ExtResource("1_tefeu")
 pointer = NodePath("AnimatedSprite2D")
 block_prototype = ExtResource("3_tipki")
+ore_prototype = ExtResource("4_ore")
 above_grid_layer = NodePath("AboveGridLayer")
 below_grid_layer = NodePath("BelowGridLayer")
 

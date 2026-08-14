@@ -1,40 +1,30 @@
 extends Resource
 class_name CellData
 
-@export var above_block: BlockData
-@export var below_block: BlockData
+## 格子数据：上/下两个槽位各存一个"定义"。
+## 运行时节点（OreBlock / Block）由 GameManager 另行管理，
+## 数据层只记录"这格是什么"。
 
-func _init(
-above_block_type: Vector2i = Vector2i.ZERO, above_block_id: int = 0,
-below_block_type: Vector2i = Vector2i.ZERO, below_block_id: int = 0
-) -> void:
-	above_block = BlockData.new(above_block_type, above_block_id)
-	below_block = BlockData.new(below_block_type, below_block_id)
+@export var above_block: BlockDef   # null = 空
+@export var below_block: BlockDef   # null = 空
+
+
+func _init(above: BlockDef = null, below: BlockDef = null) -> void:
+	above_block = above
+	below_block = below
+
+
+func set_block(is_above: bool, block_def: BlockDef) -> void:
+	if is_above:
+		above_block = block_def
+	else:
+		below_block = block_def
+
+
+func get_block(is_above: bool) -> BlockDef:
+	return above_block if is_above else below_block
 
 
 func print_data() -> void:
-	print("上方块信息")
-	above_block.print_data()
-	print("下方块信息")
-	below_block.print_data()
-
-func set_block(is_above: bool, block: BlockData) -> void:
-	if is_above:
-		above_block = block
-		print("//////////////////")
-		print("设置上方方块为")
-		block.print_data()
-		print("//////////////////")
-	else:
-		below_block = block
-		print("//////////////////")
-		print("设置下方方块为")
-		block.print_data()
-		print("//////////////////")
-
-
-func get_block(is_above: bool) -> BlockData:
-	if is_above:
-		return above_block
-	else :
-		return below_block
+	print("上方块: ", above_block.display_name if above_block else "<空>")
+	print("下方块: ", below_block.display_name if below_block else "<空>")
