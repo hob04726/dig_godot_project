@@ -45,6 +45,8 @@ func _register(res: Resource, path: String) -> void:
 			push_warning("DefDb: 矿石 id 重复 %s（%s）" % [res.id, path])
 		else:
 			ores[res.id] = res
+			if res.get_texture(0) == null:
+				push_warning("DefDb: 矿石 %s 没有贴图（texture/textures 均为空）" % res.id)
 	elif res is TileDef:
 		if res.id == &"":
 			push_warning("DefDb: %s 缺少 id，跳过" % path)
@@ -52,6 +54,8 @@ func _register(res: Resource, path: String) -> void:
 			push_warning("DefDb: 地皮 id 重复 %s（%s）" % [res.id, path])
 		else:
 			tiles[res.id] = res
+			if res.get_texture(0) == null:
+				push_warning("DefDb: 地皮 %s 没有贴图（texture/textures 均为空）" % res.id)
 	else:
 		push_warning("DefDb: %s 不是 OreDef/TileDef，跳过" % path)
 

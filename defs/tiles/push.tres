@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="TileDef" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/game/block/tile_def.gd" id="1_def"]
+[ext_resource type="Texture2D" path="res://assets/blocks/png/ground_push.png" id="2_tex"]
+
+[resource]
+script = ExtResource("1_def")
+id = &"push"
+display_name = "传送带"
+texture = ExtResource("2_tex")

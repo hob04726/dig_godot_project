@@ -1,7 +1,7 @@
-[gd_resource type="Resource" script_class="TileDef" load_steps=3 format=3]
+[gd_resource type="Resource" script_class="TileDef" format=3 uid="uid://c5l3o380j0e67"]
 
-[ext_resource type="Script" path="res://scripts/game/block/tile_def.gd" id="1_def"]
-[ext_resource type="Texture2D" path="res://assets/blocks/png/stone_0.png" id="2_tex"]
+[ext_resource type="Script" uid="uid://0w2wbbftx2ov" path="res://scripts/game/block/tile_def.gd" id="1_def"]
+[ext_resource type="Texture2D" uid="uid://b0if7cynotr70" path="res://assets/blocks/png/ground_stone.png" id="2_tex"]
 
 [resource]
 script = ExtResource("1_def")

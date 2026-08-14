@@ -1,8 +1,8 @@
 [gd_scene format=3 uid="uid://b4x7pm8lc4e48"]
 
-[ext_resource type="Texture2D" uid="uid://kpg1biopm8gr" path="res://assets/blocks/png/grass_0.png" id="1_cgrg5"]
+[ext_resource type="Texture2D" path="res://assets/blocks/png/ground_grass.png" id="1_cgrg5"]
 [ext_resource type="Script" uid="uid://bd62muay4e2rm" path="res://scripts/game/block/block.gd" id="1_om4np"]
-[ext_resource type="Texture2D" uid="uid://l6sdyp3i4eu7" path="res://assets/blocks/png/grass_2.png" id="2_4kun4"]
+[ext_resource type="Texture2D" path="res://assets/blocks/png/ground_grass.png" id="2_4kun4"]
 [ext_resource type="Script" uid="uid://bohva7wq2cxpi" path="res://scripts/game/block/states/block_animation_tree.gd" id="3_4kun4"]
 [ext_resource type="Script" uid="uid://vrxxybrwpvbv" path="res://scripts/game/block/states/idle_block_state.gd" id="5_h23sc"]
 [ext_resource type="Script" uid="uid://daesahwue18ga" path="res://scripts/game/block/states/shake_block_state.gd" id="6_0nnbb"]

@@ -9,7 +9,7 @@ func _init() -> void:
 	db.load_all()
 
 	print("=== 矿石定义 ===")
-	for ore_def in db.ores.values():
+	for ore_def: OreDef in db.ores.values():
 		var tex := ore_def.get_texture(0)
 		print("%s | rarity=%d weight=%.1f 价值=%d 血量=%d | %s" % [
 			ore_def.id, ore_def.rarity, ore_def.spawn_weight,
@@ -18,7 +18,7 @@ func _init() -> void:
 		])
 
 	print("=== 地皮定义 ===")
-	for tile_def in db.tiles.values():
+	for tile_def: TileDef in db.tiles.values():
 		var tex := tile_def.get_texture(0)
 		print("%s | %s" % [tile_def.id, tex.resource_path if tex else "<无贴图>"])
 

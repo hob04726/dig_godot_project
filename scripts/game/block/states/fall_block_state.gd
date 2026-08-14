@@ -20,3 +20,4 @@ func float_block() -> void:
 func animation_finished(anim_name: StringName) -> void:
 	if anim_name == "fall":
 		context.change_state(context.idle_state)
+		context.on_landed()

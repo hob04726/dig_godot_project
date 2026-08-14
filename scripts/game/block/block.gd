@@ -5,10 +5,15 @@ class_name Block
 @export var node_name: String = ""
 @export var size_scale: float = 1.0
 
+## 贴图基础缩放：新贴图 256x352 太大，统一乘这个系数
+const TEXTURE_BASE_SCALE := 0.13
+
 ## 方块定义引用（null = 未走注册表的临时方块）
 var def: BlockDef
 ## 所在格子坐标
 var cell: Vector2i = Vector2i.ZERO
+## 是否为"从天而降"生成（地皮为 false，直接 idle）
+var starts_falling := true
 
 @onready var animation_tree: AnimationTree = $AnimationTree
 @onready var states: Node = $States
@@ -29,7 +34,7 @@ func _ready() -> void:
 	setup_animation()
 	animation_tree.animation_finished.connect(_on_animation_finished)
 
-	change_state(fall_state)
+	change_state(fall_state if starts_falling else idle_state)
 
 
 ## 由注册表定义初始化（在 add_child 之前调用，_ready 时才会用到贴图）
@@ -47,7 +52,7 @@ func setup_properties() -> void:
 
 func setup_texture() -> void:
 	self.get_node("Sprite2D").texture = texture_to_show
-	self.get_node("Sprite2D").scale = Vector2.ONE * size_scale
+	self.get_node("Sprite2D").scale = Vector2.ONE * size_scale * TEXTURE_BASE_SCALE
 	var particles: GPUParticles2D = self.get_node("GPUParticles2D")
 	var atlas_texture := particles.texture as AtlasTexture
 
@@ -86,6 +91,17 @@ func setup_animation() -> void:
 func _on_animation_finished(anim_name: StringName) -> void:
 	if current_state != null:
 		current_state.animation_finished(anim_name)
+
+
+## 落地钩子：fall 动画结束进入 idle 时由状态机回调，子类可覆写
+func on_landed() -> void:
+	pass
+
+
+## 受击反馈：空闲时进入 shake 状态（挖矿/被摧毁时用）
+func hit() -> void:
+	if current_state == idle_state:
+		change_state(shake_state)
 
 
 func set_hovered(hovered: bool) -> void:
