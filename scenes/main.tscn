@@ -11,6 +11,9 @@
 [ext_resource type="Texture2D" uid="uid://bo542jh7ivu36" path="res://assets/patterns/Large (2×)/pattern_081.png" id="8_ya4ey"]
 [ext_resource type="Texture2D" uid="uid://dy5awy4d1opk4" path="res://assets/sketch-town/Tiles/grass_center_E.png" id="9_ya4ey"]
 [ext_resource type="Texture2D" uid="uid://m1ij61qpt62p" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_ALL.png" id="12_eb6dy"]
+[ext_resource type="Texture2D" uid="uid://dy7ixmam67yyt" path="res://assets/blocks/png/ground_dirt.png" id="13_trceg"]
+[ext_resource type="Texture2D" uid="uid://cmixn1ftx5d5i" path="res://assets/blocks/png/ground_grass.png" id="14_jkv2x"]
+[ext_resource type="Texture2D" uid="uid://b0if7cynotr70" path="res://assets/blocks/png/ground_stone.png" id="15_jbj1t"]
 [ext_resource type="Shader" uid="uid://by6cxbvaxscy2" path="res://scripts/shaders/animated_pattern_background.gdshader" id="bg_shader"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_85g3d"]
@@ -67,7 +70,19 @@ region = Rect2(210, 49, 12, 14)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_8jovo"]
 atlas = ExtResource("12_eb6dy")
-region = Rect2(97, 737, 14, 14)
+region = Rect2(3, 1122, 10, 12)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_jre5i"]
+atlas = ExtResource("13_trceg")
+region = Rect2(0, 119, 256, 233)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_a8y0u"]
+atlas = ExtResource("14_jkv2x")
+region = Rect2(0, 119, 256, 233)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_jkv2x"]
+atlas = ExtResource("15_jbj1t")
+region = Rect2(0, 82, 256, 270)
 
 [node name="Main" type="Node2D" unique_id=1767053026]
 script = ExtResource("1_o6xl0")
@@ -143,15 +158,15 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -90.99988
-offset_top = 4.0
-offset_right = -66.99988
-offset_bottom = 28.0
+offset_left = -54.0
+offset_top = 7.0
+offset_right = -14.0
+offset_bottom = 47.0
 grow_horizontal = 0
-scale = Vector2(3.5931392, 3.5931392)
 icon = SubResource("AtlasTexture_xljfi")
 flat = true
 icon_alignment = 1
+expand_icon = true
 
 [node name="PanelContainer" type="PanelContainer" parent="CanvasLayer" unique_id=977089570]
 offset_right = 40.0
@@ -181,6 +196,8 @@ anchors_preset = 12
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_top = -20.0
+offset_bottom = 27.0
 grow_horizontal = 2
 grow_vertical = 0
 
@@ -192,6 +209,30 @@ layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 4
 icon = SubResource("AtlasTexture_8jovo")
+flat = true
 
 [node name="HBoxContainer" type="HBoxContainer" parent="CanvasLayer/BlowContainer/VBoxContainer" unique_id=305888122]
 layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+
+[node name="Button" type="Button" parent="CanvasLayer/BlowContainer/VBoxContainer/HBoxContainer" unique_id=376741893]
+custom_minimum_size = Vector2(24.695, 22.36)
+layout_mode = 2
+icon = SubResource("AtlasTexture_jre5i")
+icon_alignment = 1
+expand_icon = true
+
+[node name="Button2" type="Button" parent="CanvasLayer/BlowContainer/VBoxContainer/HBoxContainer" unique_id=95455820]
+custom_minimum_size = Vector2(24.695, 22.36)
+layout_mode = 2
+icon = SubResource("AtlasTexture_a8y0u")
+icon_alignment = 1
+expand_icon = true
+
+[node name="Button3" type="Button" parent="CanvasLayer/BlowContainer/VBoxContainer/HBoxContainer" unique_id=1300043452]
+custom_minimum_size = Vector2(24.695, 22.36)
+layout_mode = 2
+icon = SubResource("AtlasTexture_jkv2x")
+icon_alignment = 1
+expand_icon = true

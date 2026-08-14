@@ -81,9 +81,9 @@ func grid_init() -> void:
 
 	for x in range(-INITIAL_GRID_SIZE, INITIAL_GRID_SIZE + 1):
 		for y in range(-INITIAL_GRID_SIZE, INITIAL_GRID_SIZE + 1):
-			var position := Vector2i(x, y)
-			grid.set_cell(position, CellData.new(null, grass))
-			create_sprite(false, position, grass)
+			var cell := Vector2i(x, y)
+			grid.set_cell(cell, CellData.new(null, grass))
+			create_sprite(false, cell, grass)
 
 
 # ==================== 落矿 ====================
@@ -184,9 +184,9 @@ func _update_money_label() -> void:
 
 # ==================== 通用方块（地皮等） ====================
 
-func set_block(is_above: bool, position: Vector2i, block_def: BlockDef) -> void:
-	grid.set_block(is_above, position, block_def)
-	create_sprite(is_above, position, block_def)
+func set_block(is_above: bool, cell: Vector2i, block_def: BlockDef) -> void:
+	grid.set_block(is_above, cell, block_def)
+	create_sprite(is_above, cell, block_def)
 
 
 func create_sprite(is_above: bool, cell: Vector2i, block_def: BlockDef) -> void:
@@ -233,13 +233,13 @@ func _set_hover(cell: Vector2i, hovered: bool) -> void:
 		node.set_hovered(hovered)
 
 
-func grid_to_world(position: Vector2i) -> Vector2:
+func grid_to_world(cell: Vector2i) -> Vector2:
 	var tile_width := 32.0
 	var tile_height := 16.0
 
 	return Vector2(
-		(position.x - position.y) * tile_width / 2.0,
-		(position.x + position.y) * tile_height / 2.0
+		(cell.x - cell.y) * tile_width / 2.0,
+		(cell.x + cell.y) * tile_height / 2.0
 	)
 
 func world_to_grid(world_position: Vector2) -> Vector2i:

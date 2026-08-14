@@ -9,7 +9,7 @@ func exit() -> void:
 	context.animation_tree["parameters/conditions/shake"] = false
 
 
-func animation_finished(anim_name: StringName) -> void:
+func animation_finished(_anim_name: StringName) -> void:
 	context.change_state(context.idle_state)
 
 
