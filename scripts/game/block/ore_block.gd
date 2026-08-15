@@ -5,6 +5,8 @@ var level: int = 1
 var hp: int
 var progress: float = 0.0   # 第 7 种地皮（渐进破坏）的进度 0~1
 var has_landed := false     # 下落动画播完才为 true（落地前不可挖）
+## 最后一次受击的伤害（GameManager 用来决定破坏后飞出的力度）
+var kill_damage := 0
 
 ## 落地事件：fall 动画结束进入 idle 时发出（经 GameManager 转报 GridModel）
 signal landed

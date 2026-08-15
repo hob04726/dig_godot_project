@@ -17,9 +17,10 @@ func enter() -> void:
 		.from(Vector2(0, -50)).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	_tween.tween_property(sprite, "modulate:a", 1.0, 0.96)
 	_tween.set_parallel(false)
-	_tween.tween_property(sprite, "rotation", deg_to_rad(10.0), 0.08)
-	_tween.tween_property(sprite, "rotation", deg_to_rad(-8.0), 0.12)
-	_tween.tween_property(sprite, "rotation", 0.0, 0.12)
+	# 落地：左右晃两下（不旋转）
+	_tween.tween_property(sprite, "position:x", -1.0, 0.1)
+	_tween.tween_property(sprite, "position:x", 1.0, 0.1)
+	_tween.tween_property(sprite, "position:x", 0.0, 0.1)
 	_tween.tween_callback(_fall_done)
 
 
