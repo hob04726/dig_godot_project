@@ -56,6 +56,8 @@ func _register(res: Resource, path: String) -> void:
 			tiles[res.id] = res
 			if res.get_texture(0) == null:
 				push_warning("DefDb: 地皮 %s 没有贴图（texture/textures 均为空）" % res.id)
+			if res.behavior == TileDef.Behavior.SPAWN and not ores.has(res.spawn_ore_id):
+				push_warning("DefDb: 地皮 %s 的 spawn_ore_id（%s）不是已注册矿石" % [res.id, res.spawn_ore_id])
 	else:
 		push_warning("DefDb: %s 不是 OreDef/TileDef，跳过" % path)
 

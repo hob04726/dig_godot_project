@@ -1,13 +1,12 @@
 [gd_resource type="Resource" script_class="TileDef" load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/game/block/tile_def.gd" id="1_def"]
-[ext_resource type="Texture2D" path="res://assets/blocks/png/ground_volcano.png" id="2_tex"]
+[ext_resource type="Texture2D" uid="uid://cmjr073pr8j5g" path="res://assets/blocks/png/ground_pull.png" id="2_tex"]
 
 [resource]
 script = ExtResource("1_def")
-id = &"volcano_stable"
-display_name = "稳定火山"
+id = &"pull"
+display_name = "磁吸"
 texture = ExtResource("2_tex")
-behavior = 2
+behavior = 8
 tick_interval = 2.0
-damage = 30

@@ -8,3 +8,5 @@ script = ExtResource("1_def")
 id = &"stone"
 display_name = "石头"
 texture = ExtResource("2_tex")
+behavior = 4
+value_multiplier = 1.5

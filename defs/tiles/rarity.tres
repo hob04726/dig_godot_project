@@ -8,3 +8,5 @@ script = ExtResource("1_def")
 id = &"rarity"
 display_name = "稀有矿脉"
 texture = ExtResource("2_tex")
+behavior = 6
+min_rarity = 3

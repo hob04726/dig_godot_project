@@ -8,3 +8,5 @@ script = ExtResource("1_def")
 id = &"push"
 display_name = "传送带"
 texture = ExtResource("2_tex")
+behavior = 7
+tick_interval = 2.0

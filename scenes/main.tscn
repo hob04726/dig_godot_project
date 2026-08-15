@@ -8,6 +8,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ore_block.tscn" id="4_ore"]
 [ext_resource type="Texture2D" uid="uid://djp2ui6a0bhup" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_Icons.png" id="5_tbgi4"]
 [ext_resource type="Texture2D" uid="uid://cl3g57ofkwtlc" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_Selectors.png" id="5_tipki"]
+[ext_resource type="Script" uid="uid://cl0watlc6b6qh" path="res://scripts/ui/tile_drawer.gd" id="6_drawer"]
 [ext_resource type="Texture2D" uid="uid://bo542jh7ivu36" path="res://assets/patterns/Large (2×)/pattern_081.png" id="8_ya4ey"]
 [ext_resource type="Texture2D" uid="uid://dy5awy4d1opk4" path="res://assets/sketch-town/Tiles/grass_center_E.png" id="9_ya4ey"]
 [ext_resource type="Texture2D" uid="uid://m1ij61qpt62p" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_ALL.png" id="12_eb6dy"]
@@ -15,6 +16,14 @@
 [ext_resource type="Texture2D" uid="uid://cmixn1ftx5d5i" path="res://assets/blocks/png/ground_grass.png" id="14_jkv2x"]
 [ext_resource type="Texture2D" uid="uid://b0if7cynotr70" path="res://assets/blocks/png/ground_stone.png" id="15_jbj1t"]
 [ext_resource type="Shader" uid="uid://by6cxbvaxscy2" path="res://scripts/shaders/animated_pattern_background.gdshader" id="bg_shader"]
+[ext_resource type="Texture2D" uid="uid://cvxq7vkw8irks" path="res://assets/blocks/png/ground_fire.png" id="tex_fire"]
+[ext_resource type="Texture2D" uid="uid://cmjr073pr8j5g" path="res://assets/blocks/png/ground_pull.png" id="tex_pull"]
+[ext_resource type="Texture2D" uid="uid://bdes1xnucybdx" path="res://assets/blocks/png/ground_push.png" id="tex_push"]
+[ext_resource type="Texture2D" uid="uid://coji1sefxw41" path="res://assets/blocks/png/ground_rarity.png" id="tex_rarity"]
+[ext_resource type="Texture2D" uid="uid://c7ynvsomsvl6m" path="res://assets/blocks/png/ground_spawn.png" id="tex_spawn"]
+[ext_resource type="Texture2D" uid="uid://cr2tmxp8wlcgd" path="res://assets/blocks/png/ground_upgrade.png" id="tex_upgrade"]
+[ext_resource type="Texture2D" uid="uid://cratdtqxnbu5e" path="res://assets/blocks/png/ground_volcano.png" id="tex_volcano"]
+[ext_resource type="Texture2D" uid="uid://dxio3fljv41t6" path="res://assets/blocks/png/ground_water.png" id="tex_water"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_85g3d"]
 atlas = ExtResource("5_tipki")
@@ -55,7 +64,7 @@ animations = [{
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_bg"]
 shader = ExtResource("bg_shader")
 shader_parameter/pattern = ExtResource("8_ya4ey")
-shader_parameter/pattern_color = Color(0.9151084, 0.97696036, 0.93665475, 1)
+shader_parameter/pattern_color = Color(0.87219226, 0.9820598, 0.9998049, 1)
 shader_parameter/tiling = 100.0
 shader_parameter/speed = Vector2(0.2, 0.3)
 shader_parameter/rotation = -1.4411852520301505
@@ -71,18 +80,6 @@ region = Rect2(210, 49, 12, 14)
 [sub_resource type="AtlasTexture" id="AtlasTexture_8jovo"]
 atlas = ExtResource("12_eb6dy")
 region = Rect2(3, 1122, 10, 12)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_jre5i"]
-atlas = ExtResource("13_trceg")
-region = Rect2(0, 119, 256, 233)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_a8y0u"]
-atlas = ExtResource("14_jkv2x")
-region = Rect2(0, 119, 256, 233)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_jkv2x"]
-atlas = ExtResource("15_jbj1t")
-region = Rect2(0, 82, 256, 270)
 
 [node name="Main" type="Node2D" unique_id=1767053026]
 script = ExtResource("1_o6xl0")
@@ -196,10 +193,11 @@ anchors_preset = 12
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_top = -20.0
-offset_bottom = 27.0
+offset_top = -17.0
+offset_bottom = 43.0
 grow_horizontal = 2
 grow_vertical = 0
+script = ExtResource("6_drawer")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer/BlowContainer" unique_id=227857589]
 layout_mode = 2
@@ -217,22 +215,85 @@ size_flags_horizontal = 4
 size_flags_vertical = 4
 
 [node name="Button" type="Button" parent="CanvasLayer/BlowContainer/VBoxContainer/HBoxContainer" unique_id=376741893]
-custom_minimum_size = Vector2(24.695, 22.36)
+custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
-icon = SubResource("AtlasTexture_jre5i")
+icon = ExtResource("13_trceg")
 icon_alignment = 1
 expand_icon = true
 
 [node name="Button2" type="Button" parent="CanvasLayer/BlowContainer/VBoxContainer/HBoxContainer" unique_id=95455820]
-custom_minimum_size = Vector2(24.695, 22.36)
+custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
-icon = SubResource("AtlasTexture_a8y0u")
+icon = ExtResource("14_jkv2x")
 icon_alignment = 1
 expand_icon = true
 
 [node name="Button3" type="Button" parent="CanvasLayer/BlowContainer/VBoxContainer/HBoxContainer" unique_id=1300043452]
-custom_minimum_size = Vector2(24.695, 22.36)
+custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
-icon = SubResource("AtlasTexture_jkv2x")
+icon = ExtResource("15_jbj1t")
+icon_alignment = 1
+expand_icon = true
+
+[node name="Button4" type="Button" parent="CanvasLayer/BlowContainer/VBoxContainer/HBoxContainer" unique_id=2101873576]
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+icon = ExtResource("tex_fire")
+icon_alignment = 1
+expand_icon = true
+
+[node name="Button5" type="Button" parent="CanvasLayer/BlowContainer/VBoxContainer/HBoxContainer" unique_id=1212353532]
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+icon = ExtResource("tex_water")
+icon_alignment = 1
+expand_icon = true
+
+[node name="Button6" type="Button" parent="CanvasLayer/BlowContainer/VBoxContainer/HBoxContainer" unique_id=1705236207]
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+icon = ExtResource("tex_volcano")
+icon_alignment = 1
+expand_icon = true
+
+[node name="Button7" type="Button" parent="CanvasLayer/BlowContainer/VBoxContainer/HBoxContainer" unique_id=1185308046]
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+icon = ExtResource("tex_volcano")
+icon_alignment = 1
+expand_icon = true
+
+[node name="Button8" type="Button" parent="CanvasLayer/BlowContainer/VBoxContainer/HBoxContainer" unique_id=1032666827]
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+icon = ExtResource("tex_upgrade")
+icon_alignment = 1
+expand_icon = true
+
+[node name="Button9" type="Button" parent="CanvasLayer/BlowContainer/VBoxContainer/HBoxContainer" unique_id=1838769866]
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+icon = ExtResource("tex_rarity")
+icon_alignment = 1
+expand_icon = true
+
+[node name="Button10" type="Button" parent="CanvasLayer/BlowContainer/VBoxContainer/HBoxContainer" unique_id=1165361738]
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+icon = ExtResource("tex_spawn")
+icon_alignment = 1
+expand_icon = true
+
+[node name="Button11" type="Button" parent="CanvasLayer/BlowContainer/VBoxContainer/HBoxContainer" unique_id=680601969]
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+icon = ExtResource("tex_push")
+icon_alignment = 1
+expand_icon = true
+
+[node name="Button12" type="Button" parent="CanvasLayer/BlowContainer/VBoxContainer/HBoxContainer" unique_id=318044509]
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+icon = ExtResource("tex_pull")
 icon_alignment = 1
 expand_icon = true
