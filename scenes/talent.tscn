@@ -5,6 +5,8 @@
 [ext_resource type="Script" uid="uid://cr5r1417ui0db" path="res://scripts/ui/talent_grid.gd" id="3_talent"]
 [ext_resource type="Script" uid="uid://b7uygkclt70mv" path="res://scripts/camera/camera.gd" id="4_cam"]
 [ext_resource type="PackedScene" path="res://scenes/talent_node.tscn" id="5_node"]
+[ext_resource type="PackedScene" uid="uid://s6l5r6ryl4kd" path="res://scenes/vfx/talent_label.tscn" id="6_tip"]
+[ext_resource type="Script" uid="uid://cqg5y06mtbcr2" path="res://scripts/ui/talent_grid_border.gd" id="7_border"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_uqx37"]
 shader = ExtResource("1_cj7wb")
@@ -14,29 +16,34 @@ shader_parameter/tiling = 100.0
 shader_parameter/speed = Vector2(0.1, 0.5)
 shader_parameter/rotation = 0.0
 
-[node name="Talent" type="Node2D"]
+[node name="Talent" type="Node2D" unique_id=11944588]
 script = ExtResource("3_talent")
-camera = NodePath("Camera2D")
 node_scene = ExtResource("5_node")
-cell_size = Vector2(100, 100)
-starting_gold = 1000000
-gold_label = NodePath("UI/GoldLabel")
+tooltip_prototype = ExtResource("6_tip")
 
-[node name="Background" type="ColorRect" parent="."]
+[node name="Background" type="ColorRect" parent="." unique_id=2069637509]
 material = SubResource("ShaderMaterial_uqx37")
-position = Vector2(-4000, -4000)
-size = Vector2(8000, 8000)
+offset_left = -4000.0
+offset_top = -4000.0
+offset_right = 4000.0
+offset_bottom = 4000.0
 mouse_filter = 2
 
-[node name="Camera2D" type="Camera2D" parent="."]
-zoom = Vector2(1, 1)
+[node name="Camera2D" type="Camera2D" parent="." unique_id=1729625448]
 script = ExtResource("4_cam")
 min_zoom = 0.2
 max_zoom = 2.0
 
-[node name="UI" type="CanvasLayer" parent="."]
+[node name="GridBorder" type="Node2D" parent="." unique_id=1729625450]
+z_index = 100
+script = ExtResource("7_border")
+max_alpha = 1.0
+border_color = Color(0.5864061, 0.5864061, 0.58640605, 1)
+border_width = 3.0
 
-[node name="GoldLabel" type="Label" parent="UI"]
+[node name="UI" type="CanvasLayer" parent="." unique_id=1528792303]
+
+[node name="GoldLabel" type="Label" parent="UI" unique_id=443318842]
 offset_left = 16.0
 offset_top = 12.0
 offset_right = 320.0

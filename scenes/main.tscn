@@ -17,6 +17,7 @@
 [ext_resource type="Texture2D" uid="uid://m1ij61qpt62p" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_ALL.png" id="12_eb6dy"]
 [ext_resource type="Texture2D" uid="uid://dy7ixmam67yyt" path="res://assets/blocks/png/ground_dirt.png" id="13_trceg"]
 [ext_resource type="Texture2D" uid="uid://cmixn1ftx5d5i" path="res://assets/blocks/png/ground_grass.png" id="14_jkv2x"]
+[ext_resource type="Shader" uid="uid://rd7sb0wag4l4" path="res://scripts/shaders/balatro_original_fire.gdshader" id="15_2f3dj"]
 [ext_resource type="Texture2D" uid="uid://b0if7cynotr70" path="res://assets/blocks/png/ground_stone.png" id="15_jbj1t"]
 [ext_resource type="Shader" uid="uid://by6cxbvaxscy2" path="res://scripts/shaders/animated_pattern_background.gdshader" id="bg_shader"]
 [ext_resource type="Texture2D" uid="uid://cvxq7vkw8irks" path="res://assets/blocks/png/ground_fire.png" id="tex_fire"]
@@ -27,6 +28,15 @@
 [ext_resource type="Texture2D" uid="uid://cr2tmxp8wlcgd" path="res://assets/blocks/png/ground_upgrade.png" id="tex_upgrade"]
 [ext_resource type="Texture2D" uid="uid://cratdtqxnbu5e" path="res://assets/blocks/png/ground_volcano.png" id="tex_volcano"]
 [ext_resource type="Texture2D" uid="uid://dxio3fljv41t6" path="res://assets/blocks/png/ground_water.png" id="tex_water"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_vxglm"]
+shader = ExtResource("15_2f3dj")
+shader_parameter/amount = 0.0
+shader_parameter/texture_details = Vector4(0, 0, 1, 1)
+shader_parameter/image_details = Vector2(1, 1)
+shader_parameter/colour_1 = Color(1, 0.72, 0.2, 1)
+shader_parameter/colour_2 = Color(1, 0.18, 0.06, 1)
+shader_parameter/id = 0.0
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_85g3d"]
 atlas = ExtResource("5_tipki")
@@ -124,6 +134,7 @@ ore_prototype = ExtResource("4_ore")
 above_grid_layer = NodePath("AboveGridLayer")
 below_grid_layer = NodePath("BelowGridLayer")
 money_label = NodePath("../CanvasLayer/PanelContainer/HBoxContainer/Money")
+money_fire_material = SubResource("ShaderMaterial_vxglm")
 explosion_prototype = ExtResource("6_exp")
 coin_prototype = ExtResource("6_coin")
 progress_bar_prototype = ExtResource("6_bar")
@@ -201,6 +212,13 @@ flat = true
 icon_alignment = 1
 expand_icon = true
 
+[node name="MoneyFire" type="ColorRect" parent="CanvasLayer" unique_id=1503619970]
+material = SubResource("ShaderMaterial_vxglm")
+offset_left = 32.0
+offset_right = 150.0
+offset_bottom = 88.0
+mouse_filter = 2
+
 [node name="PanelContainer" type="PanelContainer" parent="CanvasLayer" unique_id=977089570]
 offset_left = 48.0
 offset_top = 33.0
@@ -218,6 +236,8 @@ size_flags_vertical = 4
 
 [node name="Money" type="RichTextLabel" parent="CanvasLayer/PanelContainer/HBoxContainer" unique_id=994013188]
 layout_mode = 2
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 5
 text = "Money"
 fit_content = true
 autowrap_mode = 0

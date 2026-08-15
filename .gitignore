@@ -1,3 +1,10 @@
 # Godot 4+ specific ignores
 .godot/
 /android/
+
+# Claude Code 本机配置
+.claude/settings.local.json
+
+# 天赋 CSV 是数据文件（TalentDb 直接读取），不是 Godot 翻译表
+defs/talents/*.translation
+defs/talents/*.csv.import

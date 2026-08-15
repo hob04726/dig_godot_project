@@ -408,3 +408,47 @@ func print_data() -> void:
 		print("position", position)
 		cell.print_data()
 		print("--------------------")
+
+
+# ==================== 计数 / 存档快照 ====================
+
+## 各地块类型的已放置数量（从 cells 推导，永远与网格一致，无第二份事实源）
+func get_placed_counts() -> Dictionary[StringName, int]:
+	var counts: Dictionary[StringName, int] = {}
+	for cell: Vector2i in cells.keys():
+		var tile := get_tile_at(cell)
+		if tile != null:
+			counts[tile.id] = counts.get(tile.id, 0) + 1
+	return counts
+
+
+func get_placed_count(tile_id: StringName) -> int:
+	return get_placed_counts().get(tile_id, 0)
+
+
+## 存档快照（数据层只描述"有什么"，恢复由组合根做——它持有 DefDb 和场景工厂）。
+## 返回 [{x,y,below,above}, ...]，id 为空串表示该槽位无方块。
+func snapshot_cells() -> Array:
+	var list: Array = []
+	for cell: Vector2i in cells.keys():
+		var data := cells[cell] as CellData
+		list.append({
+			"x": cell.x, "y": cell.y,
+			"below": data.below_block.id if data.below_block != null else "",
+			"above": data.above_block.id if data.above_block != null else "",
+		})
+	return list
+
+
+## 存档快照：矿石的运行时数据（定义 id + 等级 + 血量，恢复时重建 OreBlock）
+func snapshot_ores() -> Array:
+	var list: Array = []
+	for cell: Vector2i in ores.keys():
+		var ore := ores[cell] as OreBlock
+		list.append({
+			"x": cell.x, "y": cell.y,
+			"ore": ore.get_def().id,
+			"level": ore.level,
+			"hp": ore.hp,
+		})
+	return list

@@ -25,8 +25,17 @@ var _last_placed_cell := Vector2i(999999, 999999)
 ## 批量删除时记录上一次删除的格子，避免同一格重复删
 var _last_removed_cell := Vector2i(999999, 999999)
 
-## 金币
-var coins := 0
+## 经济状态（数据层唯一写入口）：金币/累计开采/升华点/天赋购买
+var state := GameState.new()
+## 存档 I/O（内容由本组合根组装）
+var _save_manager := SaveManager.new()
+var _save_dirty := false
+## 破纪录火焰：滚动最高值 + 一分钟窗口（会话级，不存档）
+var _best_coins := BigNumber.zero()
+var _last_beat_time := -100.0
+var _fire_tween: Tween
+var _money_dance_tween: Tween
+const RECORD_WINDOW := 60.0   # 一分钟：没在这段时间内破纪录就把纪录滚到当前值
 
 ## 稿子伤害（PickaxeData 阶段再替换成资源）
 @export var pickaxe_damage := 10
@@ -48,6 +57,8 @@ var coins := 0
 
 ## 金币 HUD（main.tscn 里的 RichTextLabel）
 @export var money_label: RichTextLabel = null
+## 金币计数器破纪录时的火焰特效材质（balatro 火焰 shader，amount 控制强度）
+@export var money_fire_material: ShaderMaterial = null
 
 ## 矿石破坏特效原型：爆炸序列帧 / 金币粒子 / 挖矿进度条
 @export var explosion_prototype: PackedScene = null
@@ -70,21 +81,23 @@ var _mining_bar: Node2D = null
 var _bar_tween: Tween
 ## 等待粒子全部消失后再释放的金币粒子（{node, particles, wait}）
 var _coin_cleanups: Array = []
-## 左上角显示的金币值（跳数动画期间与 coins 不同步）
-var _displayed_coins := 0
+## 左上角显示的金币值（跳数动画期间与 state.coins 不同步）
+var _displayed_coins := BigNumber.zero()
 var _coin_tween: Tween
 
 @onready var _camera: Camera2D = get_node_or_null("Camera2D") as Camera2D
 
 var _spawn_timer: Timer
+var _autosave_timer: Timer
 
 
 func _ready() -> void:
+	# 存档脏标记先连好：初始网格构建（_load_or_init）也要标脏，否则纯新档不会自动存档
+	state.changed.connect(_mark_save_dirty)
+	grid.tile_changed.connect(_on_grid_changed)
+
 	db.load_all()
-	grid_init()
-	spawn_ore(Vector2i.ONE, db.get_ore(&"gold"), 1)
-	spawn_random_ore()
-	spawn_random_ore()
+	_load_or_init()   # 有存档 → 恢复；无存档 → 新游戏初始化
 
 	grid.ore_removed.connect(_on_ore_removed)
 	grid.ore_discarded.connect(_on_ore_discarded)
@@ -97,12 +110,32 @@ func _ready() -> void:
 	add_child(_spawn_timer)
 	_spawn_timer.start()
 
+	# 自动存档（防御：编辑器停跑/崩溃不会触发退出通知，靠定时兜底）
+	_autosave_timer = Timer.new()
+	_autosave_timer.wait_time = 15.0
+	_autosave_timer.timeout.connect(_on_autosave_tick)
+	add_child(_autosave_timer)
+	_autosave_timer.start()
+
 	# 挖矿进度条（默认隐藏，挖矿时显示在矿石上方）
 	if progress_bar_prototype != null:
 		_mining_bar = progress_bar_prototype.instantiate() as Node2D
 		above_grid_layer.add_child(_mining_bar)
 		_mining_bar.z_index = 4000   # 画在所有地块之上
 		_mining_bar.visible = false
+
+	# 火焰画在单独的矩形特效层；单图使用归一化 UV 参数。
+	# amount=0 时只让特效层透明，不会再把金币面板本身变透明。
+	if money_fire_material != null:
+		money_fire_material.set_shader_parameter("image_details", Vector2.ONE)
+		money_fire_material.set_shader_parameter("texture_details", Vector4(0, 0, 1, 1))
+
+	# RichTextLabel 是 HBoxContainer 的子节点，用视觉偏移做动画才不会被布局覆盖。
+	if money_label != null:
+		money_label.offset_transform_enabled = true
+		money_label.offset_transform_visual_only = true
+		money_label.offset_transform_pivot_ratio = Vector2(0.5, 0.5)
+		_reset_money_dance()
 
 	_update_money_label()
 
@@ -115,6 +148,7 @@ func _process(delta: float) -> void:
 	grid.tick(delta)
 	_update_flying_ores(delta)
 	_update_coin_cleanups(delta)
+	_update_fire()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -238,6 +272,7 @@ func _mine_at(cell: Vector2i) -> void:
 	ore.hit()
 	if ore.take_damage(damage):
 		ore.kill_damage = damage   # 最后一击伤害 → 决定飞出力度
+		state.increment_ore_mined(ore.get_def().id)   # 玩家挖死才计开采
 		grid.remove_ore(cell)  # 发 ore_removed → 结算金币 + 破坏特效
 	else:
 		_update_mining_bar(ore)   # 还活着：更新挖矿进度条
@@ -248,8 +283,8 @@ func _mine_at(cell: Vector2i) -> void:
 ## 时长 = 金币粒子播放时长 = 由该矿价值决定。矿石本身爆炸后飞出屏幕。
 func _on_ore_removed(ore: OreBlock, _cell: Vector2i, reward_ratio: float = 1.0) -> void:
 	var gained := int(roundf(grid.settle_value(ore) * reward_ratio))
-	coins += gained
-	print("+%d 金币（总计 %d）" % [gained, coins])
+	state.add_coins(BigNumber.from_int(gained))
+	print("+%d 金币（总计 %s）" % [gained, state.coins.to_save_string()])
 	if reward_ratio < 1.0:
 		# 水沉没（返还 10%）：不弹射，慢慢下沉渐隐，消失后在水面开金币粒子
 		_sink_ore(ore, gained)
@@ -453,19 +488,77 @@ func _coin_duration(gained: int) -> float:
 func _count_up_coins(duration: float) -> void:
 	if money_label == null:
 		return
+	_play_money_dance()
 	if _coin_tween:
 		_coin_tween.kill()
-	var from := float(_displayed_coins)
-	var target := float(coins)
+	var from := _displayed_coins
+	var target := state.coins
 	_coin_tween = create_tween()
-	_coin_tween.tween_method(_set_money_display, from, target, duration) \
+	_coin_tween.tween_method(_tick_count_up.bind(from, target), 0.0, 1.0, duration) \
 		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_coin_tween.tween_callback(_set_money_display_exact.bind(target))
 
 
-func _set_money_display(value: float) -> void:
-	_displayed_coins = int(roundf(value))
+## 跳数逐帧：大数走对数空间插值，避免大值线性插值时长时间停在原位
+func _tick_count_up(progress: float, from: BigNumber, to: BigNumber) -> void:
+	_set_money_display(BigNumber.lerp(from, to, progress))
+
+
+func _set_money_display(value: BigNumber) -> void:
+	_displayed_coins = value
+	_refresh_money_text()
+
+
+func _set_money_display_exact(value: BigNumber) -> void:
+	_displayed_coins = value
+	_refresh_money_text()
+
+
+func _refresh_money_text() -> void:
 	if money_label:
-		money_label.text = "%d" % _displayed_coins
+		money_label.text = format_compact_coins(_displayed_coins)
+
+
+## Cookie Clicker 式紧凑数字：约三位有效数字，并避免显示成 1000K。
+static func format_compact_coins(value: BigNumber) -> String:
+	return value.to_compact_string()
+
+
+## 获得金币时让文字做一次短促的弹跳、摇摆和挤压；连续收益会从头重播。
+func _play_money_dance() -> void:
+	if money_label == null:
+		return
+	if _money_dance_tween:
+		_money_dance_tween.kill()
+	_reset_money_dance()
+
+	_money_dance_tween = create_tween()
+	_money_dance_tween.tween_property(money_label, "offset_transform_position", Vector2(-1, -5), 0.08) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_money_dance_tween.parallel().tween_property(money_label, "offset_transform_scale", Vector2(1.22, 0.84), 0.08)
+	_money_dance_tween.parallel().tween_property(money_label, "offset_transform_rotation", deg_to_rad(-8.0), 0.08)
+
+	_money_dance_tween.tween_property(money_label, "offset_transform_position", Vector2(1, -3), 0.09)
+	_money_dance_tween.parallel().tween_property(money_label, "offset_transform_scale", Vector2(0.92, 1.20), 0.09)
+	_money_dance_tween.parallel().tween_property(money_label, "offset_transform_rotation", deg_to_rad(7.0), 0.09)
+
+	_money_dance_tween.tween_property(money_label, "offset_transform_position", Vector2(-1, -1), 0.08)
+	_money_dance_tween.parallel().tween_property(money_label, "offset_transform_scale", Vector2(1.10, 0.94), 0.08)
+	_money_dance_tween.parallel().tween_property(money_label, "offset_transform_rotation", deg_to_rad(-3.0), 0.08)
+
+	_money_dance_tween.tween_property(money_label, "offset_transform_position", Vector2.ZERO, 0.12) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_money_dance_tween.parallel().tween_property(money_label, "offset_transform_scale", Vector2.ONE, 0.12)
+	_money_dance_tween.parallel().tween_property(money_label, "offset_transform_rotation", 0.0, 0.12)
+	_money_dance_tween.tween_callback(_reset_money_dance)
+
+
+func _reset_money_dance() -> void:
+	if money_label == null:
+		return
+	money_label.offset_transform_position = Vector2.ZERO
+	money_label.offset_transform_scale = Vector2.ONE
+	money_label.offset_transform_rotation = 0.0
 
 
 ## 相机当前可见的世界矩形（用于判断矿石从哪条边出屏）
@@ -515,9 +608,106 @@ func _on_tile_request_spawn(cell: Vector2i, ore_id: StringName) -> void:
 
 
 func _update_money_label() -> void:
-	_displayed_coins = coins
-	if money_label:
-		money_label.text = "%d" % _displayed_coins
+	_displayed_coins = state.coins.duplicate()
+	_refresh_money_text()
+
+
+## 破纪录火焰：金币超过之前的最高值 → 冒火特效；
+## 一分钟内没破纪录则把纪录滚到当前值（下次超过再冒火）
+func _update_fire() -> void:
+	if money_fire_material == null:
+		return
+	var now := Time.get_ticks_msec() / 1000.0
+	if state.coins.gt(_best_coins):
+		_best_coins = state.coins.duplicate()
+		_last_beat_time = now
+		_trigger_fire()
+	elif now - _last_beat_time > RECORD_WINDOW:
+		_best_coins = state.coins.duplicate()
+
+
+## 冒火：拉高 shader 的 amount（火焰强度）保持一会儿再淡出
+func _trigger_fire() -> void:
+	if _fire_tween:
+		_fire_tween.kill()
+	money_fire_material.set_shader_parameter("amount", 6.0)
+	_fire_tween = create_tween()
+	_fire_tween.tween_interval(2.5)
+	_fire_tween.tween_property(money_fire_material, "shader_parameter/amount", 0.0, 0.8)
+
+
+# ==================== 存档 ====================
+
+## 有存档 → 恢复 state + 网格；无存档 → 新游戏初始化
+func _load_or_init() -> void:
+	var data := _save_manager.load()
+	if data.is_empty():
+		grid_init()
+		spawn_ore(Vector2i.ONE, db.get_ore(&"gold"), 1)
+		spawn_random_ore()
+		spawn_random_ore()
+		return
+	state.load_from_dict(data.get("state", {}))
+	_restore_grid(data.get("grid", {}))
+	# 兜底：存档缺中心地块（旧档/损坏）→ 重新初始化保证可玩
+	if not grid.has_cell(GridModel.CENTER_CELL):
+		push_warning("存档恢复: 缺少中心地块，重新初始化")
+		grid_init()
+
+
+## 从快照重建网格：先数据（cells），再场景（sprite），最后矿石（工厂）
+func _restore_grid(data: Dictionary) -> void:
+	for entry: Dictionary in data.get("cells", []):
+		var cell := Vector2i(int(entry["x"]), int(entry["y"]))
+		var below: BlockDef = db.get_tile(entry["below"]) if entry["below"] != "" else null
+		var above: BlockDef = db.get_tile(entry["above"]) if entry["above"] != "" else null
+		grid.set_cell(cell, CellData.new(above, below))
+		if below != null:
+			create_sprite(false, cell, below)
+		if above != null:
+			create_sprite(true, cell, above)
+	for entry: Dictionary in data.get("ores", []):
+		var cell := Vector2i(int(entry["x"]), int(entry["y"]))
+		var ore_def := db.get_ore(StringName(entry["ore"]))
+		if ore_def == null:
+			push_warning("存档恢复: 未知矿石 %s，跳过" % entry["ore"])
+			continue
+		spawn_ore(cell, ore_def, int(entry["level"]))
+		var ore := grid.get_ore(cell)
+		if ore != null:
+			ore.hp = int(entry["hp"])
+			ore.has_landed = true
+
+
+## 组装存档内容（state + 网格快照）并写盘
+func _save_game() -> void:
+	var payload := {
+		"version": SaveManager.SAVE_VERSION,
+		"state": state.to_dict(),
+		"grid": {"cells": grid.snapshot_cells(), "ores": grid.snapshot_ores()},
+	}
+	_save_manager.save(payload)
+	_save_dirty = false
+
+
+func _on_autosave_tick() -> void:
+	if _save_dirty:
+		_save_game()
+
+
+func _mark_save_dirty() -> void:
+	_save_dirty = true
+
+
+func _on_grid_changed(_cell: Vector2i) -> void:
+	_save_dirty = true
+
+
+## 窗口关闭前存档；编辑器停跑/崩溃由自动存档兜底
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		_save_game()
+		get_tree().quit()
 
 
 # ==================== 地皮放置 / 删除 ====================
