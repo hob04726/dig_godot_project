@@ -3,6 +3,8 @@
 [ext_resource type="Shader" uid="uid://by6cxbvaxscy2" path="res://scripts/shaders/animated_pattern_background.gdshader" id="1_cj7wb"]
 [ext_resource type="Texture2D" uid="uid://cttn5g4hwtxfd" path="res://assets/patterns/Large (2×)/pattern_000.png" id="2_vrifj"]
 [ext_resource type="Script" uid="uid://cr5r1417ui0db" path="res://scripts/ui/talent_grid.gd" id="3_talent"]
+[ext_resource type="Script" uid="uid://b7uygkclt70mv" path="res://scripts/camera/camera.gd" id="4_cam"]
+[ext_resource type="PackedScene" path="res://scenes/talent_node.tscn" id="5_node"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_uqx37"]
 shader = ExtResource("1_cj7wb")
@@ -12,50 +14,31 @@ shader_parameter/tiling = 100.0
 shader_parameter/speed = Vector2(0.1, 0.5)
 shader_parameter/rotation = 0.0
 
-[node name="Talent" type="Control" unique_id=1742236680]
-layout_mode = 3
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-
-[node name="ColorRect" type="ColorRect" parent="." unique_id=1097598909]
-material = SubResource("ShaderMaterial_uqx37")
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-
-[node name="GridContainer" type="GridContainer" parent="." unique_id=588775443]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_constants/h_separation = 0
-theme_override_constants/v_separation = 0
-columns = 10
-metadata/_edit_use_anchors_ = true
-
-[node name="GridBorder" type="Control" parent="." unique_id=1332197864]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
+[node name="Talent" type="Node2D"]
 script = ExtResource("3_talent")
-grid = NodePath("../GridContainer")
-columns = 100
-cell_count = 10000
-cell_min_size = Vector2(30, 30)
-reveal_radius = 75.0
-max_alpha = 1.0
-border_color = Color(0.8289096, 0.82890964, 0.82890975, 1)
-border_width = 3.0
+camera = NodePath("Camera2D")
+node_scene = ExtResource("5_node")
+cell_size = Vector2(100, 100)
+starting_gold = 1000000
+gold_label = NodePath("UI/GoldLabel")
+
+[node name="Background" type="ColorRect" parent="."]
+material = SubResource("ShaderMaterial_uqx37")
+position = Vector2(-4000, -4000)
+size = Vector2(8000, 8000)
+mouse_filter = 2
+
+[node name="Camera2D" type="Camera2D" parent="."]
+zoom = Vector2(1, 1)
+script = ExtResource("4_cam")
+min_zoom = 0.2
+max_zoom = 2.0
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="GoldLabel" type="Label" parent="UI"]
+offset_left = 16.0
+offset_top = 12.0
+offset_right = 320.0
+offset_bottom = 40.0
+text = "金币：0"

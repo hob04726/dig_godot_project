@@ -1,0 +1,32 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/talent_node.gd" id="1_node"]
+[ext_resource type="Texture2D" uid="uid://m1ij61qpt62p" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_ALL.png" id="2_ui"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_tmp"]
+atlas = ExtResource("2_ui")
+region = Rect2(3, 1122, 10, 12)
+
+[node name="TalentNode" type="Node2D"]
+script = ExtResource("1_node")
+
+[node name="Icon" type="Sprite2D" parent="."]
+position = Vector2(0, -6)
+texture = SubResource("AtlasTexture_tmp")
+scale = Vector2(4, 4)
+
+[node name="Name" type="Label" parent="."]
+offset_left = -45.0
+offset_top = 30.0
+offset_right = 45.0
+offset_bottom = 48.0
+horizontal_alignment = 1
+text = "天赋"
+
+[node name="Cost" type="Label" parent="."]
+offset_left = -45.0
+offset_top = -16.0
+offset_right = 45.0
+offset_bottom = 0.0
+horizontal_alignment = 1
+text = "1K"
