@@ -32,12 +32,15 @@ func _init() -> void:
 	_set_tile(grid, Vector2i(0, 2), water)
 	var sink_ore := _make_gold_ore(gold, Vector2i(0, 2))
 	_check(grid.try_spawn_ore(Vector2i(0, 2), sink_ore).is_ok(), "水格能生成矿（落地才沉没）")
-	var counts := {"discarded": 0, "rewarded": 0}
+	var counts := {"discarded": 0, "rewarded": 0, "ratio": 1.0}
 	grid.ore_discarded.connect(func(_o: OreBlock, _c: Vector2i) -> void: counts["discarded"] += 1)
-	grid.ore_removed.connect(func(_o: OreBlock, _c: Vector2i) -> void: counts["rewarded"] += 1)
+	grid.ore_removed.connect(func(_o: OreBlock, _c: Vector2i, r: float) -> void:
+		counts["rewarded"] += 1
+		counts["ratio"] = r)
 	grid.notify_ore_landed(sink_ore)
 	_check(not grid.ores.has(Vector2i(0, 2)), "水格矿落地后沉没")
 	_check(counts["rewarded"] == 1 and counts["discarded"] == 0, "沉没走 ore_removed（给金币）")
+	_check(counts["ratio"] == 0.1, "水沉没只返还价值 10%")
 
 	# --- 火山：不能承载矿 + 攻击四邻 ---
 	grid = _base_grid(dirt)
@@ -142,7 +145,7 @@ func _init() -> void:
 	var fire_cell := Vector2i(0, 1)
 	_set_tile(grid, fire_cell, fire)
 	var fire_counts := {"rewarded": 0}
-	grid.ore_removed.connect(func(_o: OreBlock, _c: Vector2i) -> void: fire_counts["rewarded"] += 1)
+	grid.ore_removed.connect(func(_o: OreBlock, _c: Vector2i, _r: float) -> void: fire_counts["rewarded"] += 1)
 	var fire_ore := _make_gold_ore(gold, fire_cell)
 	grid.try_spawn_ore(fire_cell, fire_ore)
 	var fire_before := fire_ore.hp

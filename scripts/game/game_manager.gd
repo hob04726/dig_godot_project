@@ -199,9 +199,10 @@ func _mine_at(cell: Vector2i) -> void:
 
 ## 金币结算：订阅网格事件（经济 = 纯订阅者，不写回模型）。
 ## 挖矿与地皮打掉的矿都走这里；stone 地皮会让价值倍率更高。
+## reward_ratio 是返还比例（水沉没 10%，其余 100%）。
 ## 节点释放也统一在这里做：播粒子后稍等播完再 queue_free。
-func _on_ore_removed(ore: OreBlock, _cell: Vector2i) -> void:
-	var gained := grid.settle_value(ore)
+func _on_ore_removed(ore: OreBlock, _cell: Vector2i, reward_ratio: float = 1.0) -> void:
+	var gained := int(roundf(grid.settle_value(ore) * reward_ratio))
 	coins += gained
 	_update_money_label()
 	print("+%d 金币（总计 %d）" % [gained, coins])

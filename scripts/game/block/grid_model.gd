@@ -9,7 +9,7 @@ extends RefCounted
 
 signal ore_spawned(ore: OreBlock, cell: Vector2i)
 signal ore_landed(ore: OreBlock, cell: Vector2i)
-signal ore_removed(ore: OreBlock, cell: Vector2i)
+signal ore_removed(ore: OreBlock, cell: Vector2i, reward_ratio: float)
 signal ore_discarded(ore: OreBlock, cell: Vector2i)
 signal ore_moved(ore: OreBlock, from_cell: Vector2i, to_cell: Vector2i)
 signal tile_changed(cell: Vector2i)
@@ -105,24 +105,25 @@ func try_move_ore(from_cell: Vector2i, to_cell: Vector2i) -> MutResult:
 
 
 ## 移除矿石的唯一路径：返回被移除的矿石供结算。
-## award_coins=false 时（例如随地块一起删除）改发 ore_discarded，不产生金币。
-func remove_ore(cell: Vector2i, award_coins := true) -> OreBlock:
+## reward_ratio = 返还价值比例（1.0=全额、0.1=10%、0=无奖励，如删除地块连带移除）。
+## ratio > 0 发 ore_removed（结算金币）；ratio = 0 发 ore_discarded（不给金币）。
+func remove_ore(cell: Vector2i, reward_ratio: float = 1.0) -> OreBlock:
 	var ore := ores.get(cell) as OreBlock
 	if ore == null:
 		return null
 	ores.erase(cell)
-	if award_coins:
-		ore_removed.emit(ore, cell)
+	if reward_ratio > 0.0:
+		ore_removed.emit(ore, cell, reward_ratio)
 	else:
 		ore_discarded.emit(ore, cell)
 	return ore
 
 
 ## 落地事件：fall 动画结束由 GameManager 上报。
-## 水/火山不让矿停留：落地即沉没/消失（算作地皮打掉的矿，给金币奖励）。
+## 水/火山不让矿停留：水沉没只返还 10%；火山视为"击杀"，全额（落地安全网）。
 func notify_ore_landed(ore: OreBlock) -> void:
 	if _is_hazard_cell(ore.cell):
-		remove_ore(ore.cell)
+		remove_ore(ore.cell, 0.1 if _is_water(ore.cell) else 1.0)
 		return
 	ore_landed.emit(ore, ore.cell)
 
@@ -171,7 +172,7 @@ func try_remove_tile(cell: Vector2i) -> MutResult:
 		return MutResult.fail(MutResult.Code.WOULD_DISCONNECT, "删除会让地块群断开")
 	# 删除地块时连带移除其上的矿石（不给金币，走 ore_discarded）
 	if ores.has(cell):
-		remove_ore(cell, false)
+		remove_ore(cell, 0.0)
 	cells.erase(cell)
 	_tile_timers.erase(cell)
 	tile_changed.emit(cell)
@@ -352,7 +353,7 @@ func _push_tick(cell: Vector2i) -> void:
 		return
 	var chosen: Vector2i = targets.pick_random()
 	if _is_hazard_cell(chosen):
-		remove_ore(cell)  # 推入水：沉没消失（算作地皮打掉的矿，给金币）
+		remove_ore(cell, 0.1)  # 推入水：沉没，只返还价值 10%
 	else:
 		try_move_ore(cell, chosen)
 
@@ -394,6 +395,11 @@ func _is_hazard_cell(cell: Vector2i) -> bool:
 	if tile == null:
 		return true
 	return tile.behavior == TileDef.Behavior.WATER or tile.behavior == TileDef.Behavior.VOLCANO
+
+
+func _is_water(cell: Vector2i) -> bool:
+	var tile := get_tile_at(cell)
+	return tile != null and tile.behavior == TileDef.Behavior.WATER
 
 
 func print_data() -> void:

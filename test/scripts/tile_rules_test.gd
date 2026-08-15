@@ -39,7 +39,7 @@ func _init() -> void:
 	_check(grid.has_ore(Vector2i(0, -1)), "矿石已注册")
 	var counts := {"discarded": 0, "rewarded": 0}
 	grid.ore_discarded.connect(func(_removed: OreBlock, _cell: Vector2i) -> void: counts["discarded"] += 1)
-	grid.ore_removed.connect(func(_removed: OreBlock, _cell: Vector2i) -> void: counts["rewarded"] += 1)
+	grid.ore_removed.connect(func(_removed: OreBlock, _cell: Vector2i, _ratio: float) -> void: counts["rewarded"] += 1)
 	_check(grid.can_remove_tile(Vector2i(0, -1)), "带矿石的地块可删除")
 	_check(grid.try_remove_tile(Vector2i(0, -1)).is_ok(), "带矿石的地块删除成功")
 	_check(not grid.has_ore(Vector2i(0, -1)), "矿石随地块一起移除")
