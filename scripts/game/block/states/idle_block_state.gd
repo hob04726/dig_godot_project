@@ -1,21 +1,10 @@
 extends BlockState
 
+## 静止态：不播放动画；进入时把精灵的动画偏移复位，保证干净基态
+
 
 func enter() -> void:
-	context.animation_tree["parameters/conditions/idle"] = true
-
-
-func exit() -> void:
-	context.animation_tree["parameters/conditions/idle"] = false
-
-
-func get_hurt() -> void:
-	context.change_state(context.shake_state)
-
-
-func fall() -> void:
-	context.change_state(context.fall_state)
-
-
-func float_block() -> void:
-	context.change_state(context.float_state)
+	var sprite := context.sprite
+	sprite.position = Vector2.ZERO
+	sprite.rotation = 0.0
+	sprite.modulate.a = 1.0

@@ -1,4 +1,4 @@
-extends Node
+extends Node2D
 class_name Block
 
 @export var texture_to_show: Texture2D = null
@@ -15,7 +15,7 @@ var cell: Vector2i = Vector2i.ZERO
 ## 是否为"从天而降"生成（地皮为 false，直接 idle）
 var starts_falling := true
 
-@onready var animation_tree: AnimationTree = $AnimationTree
+@onready var sprite: Sprite2D = $Sprite2D
 @onready var states: Node = $States
 
 @onready var idle_state: BlockState = $States/Idle
@@ -25,15 +25,10 @@ var starts_falling := true
 
 var current_state: BlockState
 
-var animation_playback: AnimationNodeStateMachinePlayback
-
 
 func _ready() -> void:
 	setup_properties()
 	setup_states()
-	setup_animation()
-	animation_tree.animation_finished.connect(_on_animation_finished)
-
 	change_state(fall_state if starts_falling else idle_state)
 
 
@@ -51,9 +46,9 @@ func setup_properties() -> void:
 
 
 func setup_texture() -> void:
-	self.get_node("Sprite2D").texture = texture_to_show
-	self.get_node("Sprite2D").scale = Vector2.ONE * size_scale * TEXTURE_BASE_SCALE
-	var particles: GPUParticles2D = self.get_node("GPUParticles2D")
+	sprite.texture = texture_to_show
+	sprite.scale = Vector2.ONE * size_scale * TEXTURE_BASE_SCALE
+	var particles: GPUParticles2D = $GPUParticles2D
 	var atlas_texture := particles.texture as AtlasTexture
 
 	if atlas_texture:
@@ -81,16 +76,6 @@ func change_state(new_state: BlockState) -> void:
 
 	current_state = new_state
 	current_state.enter()
-
-
-func setup_animation() -> void:
-	animation_tree.active = true
-	animation_playback = animation_tree["parameters/playback"]
-
-
-func _on_animation_finished(anim_name: StringName) -> void:
-	if current_state != null:
-		current_state.animation_finished(anim_name)
 
 
 ## 落地钩子：fall 动画结束进入 idle 时由状态机回调，子类可覆写
