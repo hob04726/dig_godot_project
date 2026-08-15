@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A 2D isometric "digging" game built in **Godot 4.7** (Forward Plus renderer, Jolt 3D physics, `d3d12` on Windows). Main scene: `res://scenes/main.tscn`. Game logic is **pure GDScript** — the project declares a `.NET` assembly name (`[dotnet] project/assembly_name`) and the installed editor is the Mono build, but there are no `.cs` files; do not add C# build steps.
 
 The Godot binary is not on `PATH`. It lives at:
-`D:/Godot/Godot_v4.7.1-stable_mono_win64/Godot_v4.7.1-stable_mono_win64.exe`
+`D:/Program Files (x86)/Godot/Godot_v4.7.1-stable_mono_win64/Godot_v4.7.1-stable_mono_win64.exe`
 (referred to as `godot` below).
 
 ## Commands
@@ -18,6 +18,15 @@ godot --path .
 
 # Run the DefDb smoke test (a SceneTree script, prints defs + weighted rolls, then quits)
 godot --headless --script res://test/scripts/tex_path_test.gd
+
+# Run the tile placement/removal rules test (GridModel data-layer rules)
+godot --headless --script res://test/scripts/tile_rules_test.gd
+
+# Run the block animation state-machine test (Tween-driven Fall/Shake/Float transitions)
+godot --headless --script res://test/scripts/block_animation_test.gd
+
+# Run the tile behavior test (data-layer: water/volcano/upgrade/stone/grass/spawn/push/pull/fire)
+godot --headless --script res://test/scripts/tile_behavior_test.gd
 ```
 
 There is no linter or formal test framework. Tests are plain `extends SceneTree` scripts under `test/scripts/` run with `--headless --script`. To run a single check, copy that pattern (or add a script alongside the existing one). Debug prints and `push_warning`/`push_error` output are the primary diagnostic channel.
@@ -32,16 +41,18 @@ The code follows a strict **data layer / view layer** split. The current `develo
   1. Every write goes through `try_*` / `remove_*` and returns a `MutResult`; signals are emitted only after a successful write.
   2. Entities (`OreBlock`) never back-reference the grid and never emit cross-system signals.
   3. Signal callbacks must not write back into the model (views/economy are read-only subscribers).
+  4. Tile placement/removal rules (`try_place_tile` / `try_remove_tile`) — placement only adjacent to the center-connected group; the center tile (0,0) is undeletable; deletion must preserve the group's connectivity; deleting a tile also removes any ore on it without a coin reward (`remove_ore(cell, false)` → `ore_discarded`).
+  5. Tile behaviors (`GridModel.tick(delta)`, driven by GameManager each frame) — periodic behaviors: volcano attacks neighbor ores, upgrade levels the ore above, spawn emits `tile_request_spawn` (fulfilled by the view factory), push/pull move ores (`ore_moved`), fire damages the ore above. Water/volcano are hazard cells: ores can't rest there (sink on landing / spawn & move rejected), and auto-spawn/push/pull exclude them. Rarity raises the auto-spawn roll's `min_rarity`; `settle_value` (stone) and `hit_damage` (grass) are model helpers the view uses.
 - **`DefDb`** (`scripts/game/block/def_db.gd`) — read-only definition registry. On startup it scans `res://defs/ores/*.tres` and `res://defs/tiles/*.tres`, validates them, and files them into `ores`/`tiles` dictionaries keyed by `StringName` id. **Adding a new ore or tile = drop a `.tres` file into the right directory**; no code change needed.
 - **Definition resources** (`scripts/game/block/`) — `BlockDef` (id, display_name, `texture`/`textures`, `z_bias`) with two subclasses:
   - `OreDef` — rarity, spawn_weight, base_value/hp, max_level, growth curves; level-scaled getters.
-  - `TileDef` — skeleton; behavior fields are deferred to a later "tile phase".
+  - `TileDef` — a `Behavior` enum (`NONE/WATER/VOLCANO/UPGRADE/STONE/SPAWN/RARITY/PUSH/PULL/GRASS/FIRE`) plus behavior params (`tick_interval`, `damage`, `value_multiplier`, `damage_multiplier`, `min_rarity`, `spawn_ore_id`). Periodic behaviors run in `GridModel.tick`; event behaviors hook landing/mining/settlement.
   - `CellData` — one cell's two slots: `above_block` / `below_block`, each holding a `BlockDef` (null = empty).
 
 ### View layer (presentation / interaction)
 
 - **`GameManager`** (`scripts/game/game_manager.gd`) — the **composition root**. It owns a `GridModel` + `DefDb` and is the only place that both reads the model *and* instantiates scenes. The block/ore factory deliberately lives here (not in `DefDb`) because `OreBlock` requires scene files. It wires grid signals to effects (e.g. `ore_removed` → coin tally), handles ore spawning/falling, mining, hover, and the isometric coordinate mapping.
-- **`Block` / `OreBlock`** (`scripts/game/block/`) — runtime `Node2D`s. `Block` runs a state machine with four states as child nodes: `Idle`, `Shake`, `Fall`, `Float` (`scripts/game/block/states/`), driven by an `AnimationTree` (`AnimationNodeStateMachine`) whose conditions the states toggle. `OreBlock extends Block`, adding `level`/`hp`/`value` and a `landed` signal.
+- **`Block` / `OreBlock`** (`scripts/game/block/`) — runtime `Node2D`s. `Block` runs a state machine with four states as child nodes: `Idle`, `Shake`, `Fall`, `Float` (`scripts/game/block/states/`). Each state drives its own visual effect with the built-in `Tween` (fall drops + fades in, shake rocks on hit, float bobs on hover); there is no `AnimationPlayer`/`AnimationTree` in the scenes. `OreBlock extends Block`, adding `level`/`hp`/`value` and a `landed` signal.
 - **Scenes** — `scenes/block.tscn` (generic tile/block) and `scenes/ore_block.tscn` are near-identical: `Sprite2D` + `GPUParticles2D` + `AnimationPlayer` + `AnimationTree` + `States/{Idle,Shake,Fall,Float}`. `main.tscn` instantiates `GameManager` (node `World`) and points it at `block.tscn`/`ore_block.tscn` as prototypes.
 
 ### Key conventions to preserve
