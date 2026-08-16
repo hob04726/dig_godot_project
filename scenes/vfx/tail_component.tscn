@@ -1,0 +1,11 @@
+[gd_scene format=3 uid="uid://b8jgdge5864y0"]
+
+[ext_resource type="Script" path="res://scripts/ui/tail.gd" id="1_tail"]
+
+[node name="Tail" type="Node2D"]
+script = ExtResource("1_tail")
+
+[node name="Line2D" type="Line2D" parent="."]
+begin_cap_mode = 1
+end_cap_mode = 1
+joint_mode = 0

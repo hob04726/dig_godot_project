@@ -10,3 +10,4 @@ display_name = "磁吸"
 texture = ExtResource("2_tex")
 behavior = 8
 tick_interval = 2.0
+base_cost = 25000

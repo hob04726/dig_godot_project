@@ -10,3 +10,4 @@ display_name = "升级台"
 texture = ExtResource("2_tex")
 behavior = 3
 tick_interval = 3.0
+base_cost = 500000

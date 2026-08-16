@@ -26,6 +26,7 @@ func _init() -> void:
 	_check(gained.to_int() == 10, "首次升华领取差值 10 点")
 	_check(st.coins.is_zero(), "升华后金币清零")
 	_check(st.permanent_multiplier().eq(BigNumber.from_float(1.1)), "已领取 10 点 → 永久倍率 1.1")
+	_check(st.run_version == 1, "升华后 run_version = 1")
 
 	# 继续赚到累计 9e9 → 总点数 20，第二次升华只领差值 10（Cookie Clicker 差分机制）
 	st.add_coins(BigNumber.from_string("8e9"))
@@ -55,9 +56,25 @@ func _init() -> void:
 	_check(st2.ascension_points_earned.eq(st.ascension_points_earned), "存档已领取升华点一致")
 	_check(st2.ascension_points_spent == st.ascension_points_spent, "存档已花升华点一致")
 	_check(st2.ascension_points_total().eq(st.ascension_points_total()), "存档总点数按累计推导一致")
+	_check(st2.run_version == st.run_version, "存档 run_version 一致")
 	_check(st2.get_ore_mined(&"coal") == 2, "存档 ore_mined 一致")
 	_check(st2.has_talent(&"unlock_coal"), "存档普通天赋一致")
 	_check(st2.has_ascension(&"meta_legacy"), "存档升华天赋一致")
+
+	# --- 升华保留（永久槽） ---
+	var st5 := GameState.new()
+	st5.record_talent_purchase(&"prod_coal_01")
+	st5.record_talent_purchase(&"coin_bonus")
+	st5.add_coins(BigNumber.from_string("1e9"))
+	st5.apply_ascension([&"coin_bonus"])
+	_check(st5.has_talent(&"coin_bonus"), "升华保留指定天赋")
+	_check(not st5.has_talent(&"prod_coal_01"), "升华清空未保留天赋")
+	_check(st5.run_version == 1, "保留式升华 run_version 也自增")
+
+	# --- 旧档缺 run_version 容错 ---
+	var st4 := GameState.new()
+	st4.load_from_dict({})
+	_check(st4.run_version == 0, "旧档缺 run_version 容错为 0")
 
 	# --- 容错：缺字段 ---
 	var st3 := GameState.new()

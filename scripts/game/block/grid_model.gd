@@ -15,6 +15,8 @@ signal ore_moved(ore: OreBlock, from_cell: Vector2i, to_cell: Vector2i)
 signal tile_changed(cell: Vector2i)
 ## spawn 地皮请求生成矿石（视图层负责实例化场景再走 try_spawn_ore）
 signal tile_request_spawn(cell: Vector2i, ore_id: StringName)
+## 地块行为参数 override 更新（TILE_BEHAVIOR_UP 天赋；配置注入，非玩法写操作）
+signal overrides_changed
 
 const CARDINALS: Array[Vector2i] = [
 	Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
@@ -32,6 +34,10 @@ var cells: Dictionary[Vector2i, CellData] = {}
 var ores: Dictionary[Vector2i, OreBlock] = {}
 ## 周期性地块行为的计时（cell -> 已累计秒数），由 tick(delta) 驱动
 var _tile_timers: Dictionary[Vector2i, float] = {}
+## 地块行为参数 override（tile_id -> {参数名: 值}）：由 TalentSystem 计算、
+## 组合根在加载后一次性推送（TILE_BEHAVIOR_UP 的运行时修改，不改共享 .tres）。
+## 这是配置注入而非玩法写操作：不改变网格状态、不发 tile_changed。
+var tile_overrides: Dictionary[StringName, Dictionary] = {}
 
 
 # ==================== 地皮数据 ====================
@@ -56,6 +62,14 @@ func set_block(is_above: bool, position: Vector2i, block_def: BlockDef) -> void:
 		set_cell(position, cell)
 	cell.set_block(is_above, block_def)
 	tile_changed.emit(position)
+
+
+## 推送地块行为参数 override（TILE_BEHAVIOR_UP 天赋）。
+## 这是配置注入而非玩法写操作：不改变网格状态、不发 tile_changed（单独发 overrides_changed）。
+## 由组合根在加载后一次性调用；参数名与 TileDef 字段一致。
+func set_tile_overrides(overrides: Dictionary[StringName, Dictionary]) -> void:
+	tile_overrides = overrides
+	overrides_changed.emit()
 
 
 # ==================== 矿石唯一写入口 ====================
@@ -120,10 +134,13 @@ func remove_ore(cell: Vector2i, reward_ratio: float = 1.0) -> OreBlock:
 
 
 ## 落地事件：fall 动画结束由 GameManager 上报。
-## 水/火山不让矿停留：水沉没只返还 10%；火山视为"击杀"，全额（落地安全网）。
+## 水/火山不让矿停留：水沉没返还 sink_refund_ratio（天赋可提升）；火山视为"击杀"，全额（落地安全网）。
 func notify_ore_landed(ore: OreBlock) -> void:
 	if _is_hazard_cell(ore.cell):
-		remove_ore(ore.cell, 0.1 if _is_water(ore.cell) else 1.0)
+		var ratio := 1.0
+		if _is_water(ore.cell):
+			ratio = _effective_sink_refund(get_tile_at(ore.cell))
+		remove_ore(ore.cell, ratio)
 		return
 	ore_landed.emit(ore, ore.cell)
 
@@ -273,25 +290,71 @@ func get_tile_at(cell: Vector2i) -> TileDef:
 	return data.below_block as TileDef
 
 
-## 结算价值（stone 地皮倍率）——GameManager 发金币时用
+## 结算价值（stone 地皮倍率 + 天赋 override）——GameManager 发金币时用
 func settle_value(ore: OreBlock) -> int:
 	var tile := get_tile_at(ore.cell)
-	var multiplier := tile.value_multiplier if tile != null else 1.0
-	return int(roundf(ore.get_value() * multiplier))
+	return int(roundf(ore.get_value() * _effective_value_multiplier(tile)))
 
 
-## 挖矿伤害（grass 地皮倍率）——GameManager 攻击时用
+## 挖矿伤害（grass 地皮倍率 + 天赋 override）——GameManager 攻击时用
 func hit_damage(ore: OreBlock, base_damage: int) -> int:
 	var tile := get_tile_at(ore.cell)
-	var multiplier := tile.damage_multiplier if tile != null else 1.0
-	return int(roundf(base_damage * multiplier))
+	return int(roundf(base_damage * _effective_damage_multiplier(tile)))
+
+
+# ==================== 地块行为参数（含天赋 override） ====================
+
+## 读 override：tile_id 有 override 且含该参数则用之，否则回落 .tres 原值
+func _override_param(tile: TileDef, param: StringName, fallback: Variant) -> Variant:
+	if tile == null:
+		return fallback
+	var ov: Dictionary = tile_overrides.get(tile.id, {})
+	return ov.get(param, fallback)
+
+
+func _effective_value_multiplier(tile: TileDef) -> float:
+	return float(_override_param(tile, &"value_multiplier", tile.value_multiplier if tile != null else 1.0))
+
+
+func _effective_damage_multiplier(tile: TileDef) -> float:
+	return float(_override_param(tile, &"damage_multiplier", tile.damage_multiplier if tile != null else 1.0))
+
+
+func _effective_damage(tile: TileDef) -> float:
+	return float(_override_param(tile, &"damage", tile.damage if tile != null else 0.0))
+
+
+func _effective_tick_interval(tile: TileDef) -> float:
+	return float(_override_param(tile, &"tick_interval", tile.tick_interval if tile != null else 2.0))
+
+
+func _effective_min_rarity(tile: TileDef) -> int:
+	return int(_override_param(tile, &"min_rarity", tile.min_rarity if tile != null else 1))
+
+
+func _effective_sink_refund(tile: TileDef) -> float:
+	return float(_override_param(tile, &"sink_refund_ratio", tile.sink_refund_ratio if tile != null else 0.1))
+
+
+## per-cell 公开只读（GameManager / 测试用）
+func effective_value_multiplier(cell: Vector2i) -> float:
+	return _effective_value_multiplier(get_tile_at(cell))
+
+
+func effective_damage_multiplier(cell: Vector2i) -> float:
+	return _effective_damage_multiplier(get_tile_at(cell))
+
+
+func effective_min_rarity(cell: Vector2i) -> int:
+	return _effective_min_rarity(get_tile_at(cell))
 
 
 func _advance_behavior(cell: Vector2i, tile: TileDef, delta: float) -> void:
-	if tile.tick_interval <= 0.0:
+	var interval := _effective_tick_interval(tile)
+	if interval <= 0.0:
 		return
 	_tile_timers[cell] = _tile_timers.get(cell, 0.0) + delta
-	if _tile_timers[cell] < tile.tick_interval:
+	if _tile_timers[cell] < interval:
 		return
 	_tile_timers[cell] = 0.0
 	match tile.behavior:
@@ -316,7 +379,7 @@ func _volcano_tick(cell: Vector2i, tile: TileDef) -> void:
 		var ore := ores.get(target) as OreBlock
 		if ore == null or not ore.has_landed:
 			continue
-		if ore.take_damage(int(tile.damage)):
+		if ore.take_damage(int(_effective_damage(tile))):
 			remove_ore(target)
 
 
@@ -353,7 +416,8 @@ func _push_tick(cell: Vector2i) -> void:
 		return
 	var chosen: Vector2i = targets.pick_random()
 	if _is_hazard_cell(chosen):
-		remove_ore(cell, 0.1)  # 推入水：沉没，只返还价值 10%
+		# 推入水：沉没，返还比例走天赋 override（可高于默认 10%）
+		remove_ore(cell, _effective_sink_refund(get_tile_at(chosen)))
 	else:
 		try_move_ore(cell, chosen)
 
@@ -378,7 +442,7 @@ func _fire_tick(cell: Vector2i, tile: TileDef) -> void:
 	var ore := ores.get(cell) as OreBlock
 	if ore == null or not ore.has_landed:
 		return
-	if ore.take_damage(int(tile.damage)):
+	if ore.take_damage(int(_effective_damage(tile))):
 		remove_ore(cell)
 
 

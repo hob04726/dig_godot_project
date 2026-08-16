@@ -21,6 +21,9 @@ var lifetime_coins := BigNumber.zero()
 var ascension_points_earned := BigNumber.zero()
 ## 已花掉的升华点（购买升华天赋用）
 var ascension_points_spent: int = 0
+## 本轮标识：升华（重置）时 +1。跨进程让主场景感知"升华已发生，网格需重建"
+## （存档里 grid.run_version 与 state.run_version 失配 = 该重建新一轮）。
+var run_version: int = 0
 ## 每矿累计开采数：ore_id -> int（矿石被玩家挖死时 +1，跨轮保留）
 var ore_mined: Dictionary[StringName, int] = {}
 ## 普通天赋购买（本轮）：id -> true
@@ -67,14 +70,23 @@ func ascension_points_total() -> BigNumber:
 
 
 ## 升华结算：领取"新总数 − 已领取"的差值，清空本轮金币与普通天赋，进入新一轮。
-## 返回本次领取的升华点；网格/初始地块由调用方（未来的重置流程）负责重建。
-func apply_ascension() -> BigNumber:
+## preserve_ids：永久槽保留的普通天赋（清空时保留它们）。
+## 返回本次领取的升华点；run_version 自增（主场景据此重建网格）。
+func apply_ascension(preserve_ids: Array[StringName] = []) -> BigNumber:
 	var gain := ascension_points_total().sub(ascension_points_earned)
 	if gain.is_negative():
 		gain = BigNumber.zero()
 	ascension_points_earned = ascension_points_earned.add(gain)
 	coins = BigNumber.zero()
-	talent_purchases.clear()
+	if preserve_ids.is_empty():
+		talent_purchases.clear()
+	else:
+		var preserved: Dictionary[StringName, bool] = {}
+		for id in preserve_ids:
+			if talent_purchases.has(id):
+				preserved[id] = true
+		talent_purchases = preserved
+	run_version += 1
 	changed.emit()
 	return gain
 
@@ -135,6 +147,7 @@ func to_dict() -> Dictionary:
 		"lifetime_coins": lifetime_coins.to_save_string(),
 		"ascension_points_earned": ascension_points_earned.to_save_string(),
 		"ascension_points_spent": ascension_points_spent,
+		"run_version": run_version,
 		"ore_mined": om,
 		"talents": tp,
 		"ascension_talents": ap,
@@ -147,6 +160,7 @@ func load_from_dict(data: Dictionary) -> void:
 	lifetime_coins = BigNumber.from_string(str(data.get("lifetime_coins", "0")))
 	ascension_points_earned = BigNumber.from_string(str(data.get("ascension_points_earned", "0")))
 	ascension_points_spent = int(data.get("ascension_points_spent", 0))
+	run_version = int(data.get("run_version", 0))   # 旧档缺省 0，兼容
 	ore_mined.clear()
 	for key in data.get("ore_mined", {}):
 		ore_mined[StringName(key)] = int(data["ore_mined"][key])

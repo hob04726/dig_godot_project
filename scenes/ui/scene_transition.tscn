@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://cscenetrans01"]
+
+[ext_resource type="Script" path="res://scripts/ui/scene_transition.gd" id="1_trans"]
+[ext_resource type="Texture2D" path="res://assets/masks/mask.png" id="2_mask"]
+
+[node name="SceneTransition" type="CanvasLayer"]
+script = ExtResource("1_trans")
+mask_texture = ExtResource("2_mask")

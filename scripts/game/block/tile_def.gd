@@ -34,3 +34,7 @@ enum Behavior {
 @export var min_rarity: int = 1
 ## spawn 生成的矿石 id
 @export var spawn_ore_id: StringName = &"crystal"
+## 放置基准价：放置计价 = base × 1.15^已放置数；卖出返 25%
+@export var base_cost: int = 0
+## 水格沉没返还比例（TILE_BEHAVIOR_UP 的 water 升级覆盖它）
+@export var sink_refund_ratio: float = 0.1

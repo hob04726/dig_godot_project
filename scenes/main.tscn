@@ -6,12 +6,16 @@
 [ext_resource type="PackedScene" uid="uid://b4x7pm8lc4e48" path="res://scenes/block.tscn" id="3_tipki"]
 [ext_resource type="Script" uid="uid://d3clejmktvs1s" path="res://scripts/button/move_back.gd" id="4_jyhfs"]
 [ext_resource type="PackedScene" path="res://scenes/ore_block.tscn" id="4_ore"]
+[ext_resource type="Script" uid="uid://bsgidl8wmai6e" path="res://scripts/button/open_talent.gd" id="4_talent"]
 [ext_resource type="Texture2D" uid="uid://djp2ui6a0bhup" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_Icons.png" id="5_tbgi4"]
 [ext_resource type="Texture2D" uid="uid://cl3g57ofkwtlc" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_Selectors.png" id="5_tipki"]
 [ext_resource type="PackedScene" uid="uid://byh7nv54qydf6" path="res://scenes/vfx/progress_bar.tscn" id="6_bar"]
 [ext_resource type="PackedScene" uid="uid://cuxx4uwklitax" path="res://scenes/vfx/coin.tscn" id="6_coin"]
+[ext_resource type="PackedScene" uid="uid://ccoinnumber01" path="res://scenes/vfx/coin_number.tscn" id="6_coinum"]
 [ext_resource type="Script" uid="uid://cl0watlc6b6qh" path="res://scripts/ui/tile_drawer.gd" id="6_drawer"]
 [ext_resource type="PackedScene" uid="uid://jvko5320iwh" path="res://scenes/vfx/explosion.tscn" id="6_exp"]
+[ext_resource type="PackedScene" uid="uid://c8q85fn7sqah0" path="res://scenes/vfx/jumpnumber.tscn" id="6_jump"]
+[ext_resource type="PackedScene" uid="uid://b8jgdge5864y0" path="res://scenes/vfx/tail_component.tscn" id="6_tail"]
 [ext_resource type="Texture2D" uid="uid://bo542jh7ivu36" path="res://assets/patterns/Large (2×)/pattern_081.png" id="8_ya4ey"]
 [ext_resource type="Texture2D" uid="uid://dy5awy4d1opk4" path="res://assets/sketch-town/Tiles/grass_center_E.png" id="9_ya4ey"]
 [ext_resource type="Texture2D" uid="uid://m1ij61qpt62p" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_ALL.png" id="12_eb6dy"]
@@ -138,6 +142,9 @@ money_fire_material = SubResource("ShaderMaterial_vxglm")
 explosion_prototype = ExtResource("6_exp")
 coin_prototype = ExtResource("6_coin")
 progress_bar_prototype = ExtResource("6_bar")
+jump_number_prototype = ExtResource("6_jump")
+coin_number_prototype = ExtResource("6_coinum")
+tail_prototype = ExtResource("6_tail")
 ore_launch_base = 10.0
 
 [node name="AboveGridLayer" type="Node2D" parent="World" unique_id=1279684721]
@@ -246,6 +253,11 @@ autowrap_mode = 0
 layout_mode = 2
 texture = SubResource("AtlasTexture_bjqgx")
 expand_mode = 2
+
+[node name="Talent" type="Button" parent="CanvasLayer/PanelContainer" unique_id=2002355869]
+layout_mode = 2
+flat = true
+script = ExtResource("4_talent")
 
 [node name="BlowContainer" type="PanelContainer" parent="CanvasLayer" unique_id=1695655509]
 anchors_preset = 12

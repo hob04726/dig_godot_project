@@ -6,7 +6,11 @@
 [ext_resource type="Script" uid="uid://b7uygkclt70mv" path="res://scripts/camera/camera.gd" id="4_cam"]
 [ext_resource type="PackedScene" path="res://scenes/talent_node.tscn" id="5_node"]
 [ext_resource type="PackedScene" uid="uid://s6l5r6ryl4kd" path="res://scenes/vfx/talent_label.tscn" id="6_tip"]
+[ext_resource type="PackedScene" uid="uid://lq36kecy8mki" path="res://scenes/vfx/impact.tscn" id="10_impact"]
 [ext_resource type="Script" uid="uid://cqg5y06mtbcr2" path="res://scripts/ui/talent_grid_border.gd" id="7_border"]
+[ext_resource type="Texture2D" uid="uid://m1ij61qpt62p" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_ALL.png" id="8_0uvk2"]
+[ext_resource type="Script" uid="uid://bubdnf2uys4m" path="res://scripts/button/back_to_main.gd" id="8_back"]
+[ext_resource type="Texture2D" uid="uid://djp2ui6a0bhup" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_Icons.png" id="9_u0ktv"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_uqx37"]
 shader = ExtResource("1_cj7wb")
@@ -16,10 +20,26 @@ shader_parameter/tiling = 100.0
 shader_parameter/speed = Vector2(0.1, 0.5)
 shader_parameter/rotation = 0.0
 
+[sub_resource type="AtlasTexture" id="AtlasTexture_lsgmm"]
+atlas = ExtResource("8_0uvk2")
+region = Rect2(97, 1314, 30, 12)
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_mhclv"]
+texture = SubResource("AtlasTexture_lsgmm")
+texture_margin_left = 3.0
+texture_margin_top = 4.0
+texture_margin_right = 3.0
+texture_margin_bottom = 3.0
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_q4pbm"]
+atlas = ExtResource("9_u0ktv")
+region = Rect2(210, 49, 12, 14)
+
 [node name="Talent" type="Node2D" unique_id=11944588]
 script = ExtResource("3_talent")
 node_scene = ExtResource("5_node")
 tooltip_prototype = ExtResource("6_tip")
+impact_prototype = ExtResource("10_impact")
 
 [node name="Background" type="ColorRect" parent="." unique_id=2069637509]
 material = SubResource("ShaderMaterial_uqx37")
@@ -43,9 +63,35 @@ border_width = 3.0
 
 [node name="UI" type="CanvasLayer" parent="." unique_id=1528792303]
 
-[node name="GoldLabel" type="Label" parent="UI" unique_id=443318842]
-offset_left = 16.0
-offset_top = 12.0
-offset_right = 320.0
-offset_bottom = 40.0
-text = "金币：0"
+[node name="PanelContainer" type="PanelContainer" parent="UI" unique_id=1642300860]
+offset_left = 48.0
+offset_top = 33.0
+offset_right = 134.0
+offset_bottom = 73.0
+size_flags_horizontal = 3
+size_flags_vertical = 3
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxTexture_mhclv")
+
+[node name="HBoxContainer" type="HBoxContainer" parent="UI/PanelContainer" unique_id=1500970528]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+
+[node name="Money" type="RichTextLabel" parent="UI/PanelContainer/HBoxContainer" unique_id=1222663295]
+layout_mode = 2
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 5
+text = "Money"
+fit_content = true
+autowrap_mode = 0
+
+[node name="TextureRect" type="TextureRect" parent="UI/PanelContainer/HBoxContainer" unique_id=2098547394]
+layout_mode = 2
+texture = SubResource("AtlasTexture_q4pbm")
+expand_mode = 2
+
+[node name="Back" type="Button" parent="UI/PanelContainer" unique_id=1371171917]
+layout_mode = 2
+flat = true
+script = ExtResource("8_back")

@@ -21,7 +21,7 @@ var _tween: Tween
 
 
 func _ready() -> void:
-	_game_manager = get_tree().current_scene.get_node_or_null("World") as GameManager
+	_game_manager = _find_game_manager()
 	if _game_manager == null:
 		push_warning("tile_drawer: 找不到 World（GameManager）节点")
 
@@ -55,8 +55,29 @@ func _ready() -> void:
 		push_warning("tile_drawer: 地皮按钮 %d 个与 TILE_IDS %d 个不匹配"
 			% [_tile_buttons.size(), TILE_IDS.size()])
 
+	_refresh_visible()
 	if _game_manager:
 		_game_manager.tile_selection_changed.connect(_on_selection_changed)
+		# GameManager._ready 完成后再刷一次（时序兜底：万一本节点先于它 _ready）
+		_game_manager.initialized.connect(_refresh_visible)
+
+
+## 可靠查找 World（GameManager）：当前场景优先，兜底从根按名找（headless 脚本等场景）
+func _find_game_manager() -> GameManager:
+	var scene := get_tree().current_scene
+	if scene != null:
+		var found := scene.get_node_or_null("World") as GameManager
+		if found != null:
+			return found
+	return get_tree().root.find_child("World", true, false) as GameManager
+
+
+## 只显示已解锁的地块按钮（UNLOCK_TILE 天赋门控）：未解锁的不出现在抽屉里。
+## 隐藏不改变按钮↔TILE_IDS 的顺序映射，选中同步仍按原索引工作。
+func _refresh_visible() -> void:
+	for i in _tile_buttons.size():
+		var unlocked := _game_manager != null and _game_manager.is_tile_unlocked(TILE_IDS[i])
+		_tile_buttons[i].visible = unlocked
 
 
 ## 递归把容器背景设为 IGNORE（按钮本身保持可点）

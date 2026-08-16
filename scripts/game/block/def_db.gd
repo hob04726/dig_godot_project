@@ -72,15 +72,17 @@ func get_tile(id: StringName) -> TileDef:
 
 ## 加权随机抽取一种矿石定义。
 ## min_rarity：第 5 种地皮"提升掉落稀有度"就是提高这个下限。
+## allowed_ore_ids：落矿池过滤（UNLOCK_ORE 解锁门控）；空数组 = 不过滤（默认，回归安全）。
 ## rng 由调用方注入（可复现种子）；不注入则临时随机。
-func roll_ore(min_rarity: int = 1, rng: RandomNumberGenerator = null) -> OreDef:
+func roll_ore(min_rarity: int = 1, rng: RandomNumberGenerator = null,
+		allowed_ore_ids: Array[StringName] = []) -> OreDef:
 	if rng == null:
 		rng = RandomNumberGenerator.new()
 		rng.randomize()
 
 	var total := 0.0
 	for ore_def in ores.values():
-		if ore_def.rarity >= min_rarity and ore_def.spawn_weight > 0.0:
+		if _in_pool(ore_def, min_rarity, allowed_ore_ids):
 			total += ore_def.spawn_weight
 	if total <= 0.0:
 		push_warning("DefDb: 没有满足 rarity >= %d 的矿石" % min_rarity)
@@ -88,9 +90,18 @@ func roll_ore(min_rarity: int = 1, rng: RandomNumberGenerator = null) -> OreDef:
 
 	var pick := rng.randf() * total
 	for ore_def in ores.values():
-		if ore_def.rarity < min_rarity or ore_def.spawn_weight <= 0.0:
+		if not _in_pool(ore_def, min_rarity, allowed_ore_ids):
 			continue
 		pick -= ore_def.spawn_weight
 		if pick <= 0.0:
 			return ore_def
 	return null
+
+
+## 是否在落矿池：稀有度够 + 有权重 + （allowed 为空则全部，否则仅 allowed 集合内）
+func _in_pool(ore_def: OreDef, min_rarity: int, allowed_ore_ids: Array[StringName]) -> bool:
+	if ore_def.rarity < min_rarity or ore_def.spawn_weight <= 0.0:
+		return false
+	if not allowed_ore_ids.is_empty() and not allowed_ore_ids.has(ore_def.id):
+		return false
+	return true

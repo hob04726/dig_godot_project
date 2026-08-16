@@ -27,6 +27,12 @@ var _last_removed_cell := Vector2i(999999, 999999)
 
 ## 经济状态（数据层唯一写入口）：金币/累计开采/升华点/天赋购买
 var state := GameState.new()
+## 天赋定义数据库（defs/talents/*.csv，与 db=DefDb 的 ore/tile 定义分开）
+var _talent_db := TalentDb.new()
+## 天赋效果引擎（聚合已购天赋 → 结算/伤害/落矿池查询）
+var _talent_system: TalentSystem = null
+## 挖矿暴击判定 + 落矿抽取的随机源（可复现种子）
+var _mine_rng := RandomNumberGenerator.new()
 ## 存档 I/O（内容由本组合根组装）
 var _save_manager := SaveManager.new()
 var _save_dirty := false
@@ -60,10 +66,13 @@ const RECORD_WINDOW := 60.0   # 一分钟：没在这段时间内破纪录就把
 ## 金币计数器破纪录时的火焰特效材质（balatro 火焰 shader，amount 控制强度）
 @export var money_fire_material: ShaderMaterial = null
 
-## 矿石破坏特效原型：爆炸序列帧 / 金币粒子 / 挖矿进度条
+## 矿石破坏特效原型：爆炸序列帧 / 金币粒子 / 挖矿进度条 / 伤害跳数
 @export var explosion_prototype: PackedScene = null
 @export var coin_prototype: PackedScene = null
 @export var progress_bar_prototype: PackedScene = null
+@export var jump_number_prototype: PackedScene = null   # scenes/vfx/jumpnumber.tscn（稿子伤害跳数，40x40）
+@export var coin_number_prototype: PackedScene = null   # scenes/vfx/coin_number.tscn（金币跳数，240x80 大盒子）
+@export var tail_prototype: PackedScene = null          # scenes/vfx/tail.tscn（金币飞向计数板的拖尾）
 ## 金币粒子整体缩放（贴图 20x18 已经小，这个再乘一档）
 @export var coin_effect_scale := 0.4
 ## 矿石飞出力度：基础 + 每点最后一击伤害附加的力。
@@ -74,8 +83,30 @@ const RECORD_WINDOW := 60.0   # 一分钟：没在这段时间内破纪录就把
 @export var explosion_scale_base := 0.3
 @export var explosion_scale_per_damage := 0.015
 
+## 金币飞向计数板：边缘跳数 + 拖尾参数
+const COIN_NUM_SPEED := 220.0         # 边缘跳数飞向屏幕中心的速度
+const COIN_TRAIL_SPREAD := 120.0      # 拖尾初始扩散速度（先向两侧飞）
+const COIN_TRAIL_LATERAL_FORCE := 700.0  # 向左右随机方向的初始侧力（先猛地侧飞）
+const COIN_TRAIL_LATERAL_DECAY := 2.0    # 侧力随时间衰减速度（e^(-decay*t)，越小持续越久）
+const COIN_TRAIL_PULL_START := 60.0   # 初始拉力很弱（侧飞阶段不被吸走）
+const COIN_TRAIL_PULL_GROWTH := 2000.0 # 拉力每秒增长（侧飞衰减后猛吸回计数板）
+const COIN_TRAIL_DISTANCE_PULL := 300000.0  # 距离反比引力系数（K/(dist/3)=3K/距离）：越接近计数板吸力越强
+const COIN_TRAIL_DAMPING := 0.5       # 速度阻尼（保留弧线）
+const COIN_TRAIL_MAX_SPEED := 900.0   # 头部速度上限（防止过冲跳过淡出半径）
+const COIN_TRAIL_COUNT_CAP := 10      # 拖尾数量上限
+
 ## 正在飞出屏幕的矿石（{ore, velocity, gained}）
 var _flying_ores: Array = []
+## 正在飞行的伤害跳数（{node, label, velocity, time, crit}）——矿石同款动线，下落渐隐
+var _jump_numbers: Array = []
+## 金币飞向计数板的飞行体（{kind:"num"|"trail", node, velocity, time, target, pull}）
+var _coin_flights: Array = []
+## 金币飞行所在层：主 UI CanvasLayer（layer 1，屏幕空间，天然在世界之上）。
+## 飞行体 z_index 取负 → 画在主 UI 控件（计数板/HUD）之下 → 汇聚到计数板后面消失。
+var _coin_flight_layer: CanvasLayer = null
+## 待拖尾消失后再触发的金币跳数：飞行结束后才"震动 + 上涨"
+var _pending_coin := false
+var _pending_coin_duration := 0.0
 ## 当前正在挖的矿上方的进度条
 var _mining_bar: Node2D = null
 var _bar_tween: Tween
@@ -87,6 +118,13 @@ var _coin_tween: Tween
 
 @onready var _camera: Camera2D = get_node_or_null("Camera2D") as Camera2D
 
+## 自定义鼠标光标：悬停矿 → tile_0108（挖矿），放置模式 → tile_0109（放置），其余项目默认 tile_0026
+var _cursor_mine: Texture2D = null
+var _cursor_place: Texture2D = null
+var _cursor_default: Texture2D = null
+## 当前生效的光标（""=默认），避免每帧重复调用 Input.set_custom_mouse_cursor
+var _current_cursor := &""
+
 var _spawn_timer: Timer
 var _autosave_timer: Timer
 
@@ -97,7 +135,12 @@ func _ready() -> void:
 	grid.tile_changed.connect(_on_grid_changed)
 
 	db.load_all()
+	_talent_db.load_all()
+	_talent_system = TalentSystem.new(state, _talent_db)
+	_mine_rng.randomize()
 	_load_or_init()   # 有存档 → 恢复；无存档 → 新游戏初始化
+	# 天赋地块行为 override（TILE_BEHAVIOR_UP）推给网格
+	grid.set_tile_overrides(_talent_system.get_tile_behavior_overrides())
 
 	grid.ore_removed.connect(_on_ore_removed)
 	grid.ore_discarded.connect(_on_ore_discarded)
@@ -138,17 +181,65 @@ func _ready() -> void:
 		_reset_money_dance()
 
 	_update_money_label()
+	_setup_cursors()
+	_setup_coin_flight_layer()
+	initialized.emit()   # _ready 完成：依赖方（抽屉等）此时可安全查询解锁状态
+
+
+## 金币飞行层 = 主 UI CanvasLayer：屏幕空间，天然画在世界之上
+func _setup_coin_flight_layer() -> void:
+	if money_label != null:
+		_coin_flight_layer = money_label.get_parent().get_parent().get_parent() as CanvasLayer
+	if _coin_flight_layer == null:
+		_coin_flight_layer = get_node_or_null("../CanvasLayer") as CanvasLayer
+	if _coin_flight_layer == null:   # 兜底：新建一个
+		_coin_flight_layer = CanvasLayer.new()
+		_coin_flight_layer.name = "CoinFlightLayer"
+		add_child(_coin_flight_layer)
+
+
+## 加载自定义鼠标光标素材（悬停矿 / 放置模式 / 项目默认）
+func _setup_cursors() -> void:
+	_cursor_mine = load("res://assets/cursor/Tiles/tile_0108.png") as Texture2D
+	_cursor_place = load("res://assets/cursor/Tiles/tile_0109.png") as Texture2D
+	_cursor_default = load("res://assets/cursor/Tiles/tile_0026.png") as Texture2D
 
 
 func _process(delta: float) -> void:
 	show_target()
 	update_hover()
+	_update_cursor()
 	_batch_place_if_held()
 	_batch_remove_if_held()
 	grid.tick(delta)
 	_update_flying_ores(delta)
+	_update_jump_numbers(delta)
+	_update_coin_flights(delta)
 	_update_coin_cleanups(delta)
 	_update_fire()
+
+
+## 按当前状态刷新鼠标光标：放置模式(0109) > 悬停矿(0108) > 默认(0026)；鼠标在 UI 上时用默认。
+## 只在目标变化时调用 Input.set_custom_mouse_cursor（原生调用有成本）。
+func _update_cursor() -> void:
+	var want := &""
+	if selected_tile != null:
+		want = &"place"
+	elif _hovered_node is OreBlock:
+		want = &"mine"
+	if get_viewport().gui_get_hovered_control() != null:
+		want = &""   # 鼠标悬停在 UI 控件（抽屉等）上时保持默认
+	if want == _current_cursor:
+		return
+	_current_cursor = want
+	var tex := _cursor_default
+	match want:
+		&"mine": tex = _cursor_mine
+		&"place": tex = _cursor_place
+	if tex != null:
+		Input.set_custom_mouse_cursor(tex.get_image(), Input.CURSOR_ARROW)
+	else:
+		Input.set_custom_mouse_cursor(null, Input.CURSOR_ARROW)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -171,18 +262,18 @@ func show_target() -> void:
 	pointer.position = grid_to_world(_hovered_cell)
 
 
-## 初始 3x3 草地：先写数据（CellData），再建渲染（Sprite）
+## 初始 3x3 泥土（设计：开局只有 dirt 可放置，见 defs/talents）：先写数据（CellData），再建渲染（Sprite）
 func grid_init() -> void:
-	var grass := db.get_tile(&"grass")
-	if grass == null:
-		push_error("game_manager: 缺少 grass 地皮定义，请检查 res://defs/tiles")
+	var dirt := db.get_tile(&"dirt")
+	if dirt == null:
+		push_error("game_manager: 缺少 dirt 地皮定义，请检查 res://defs/tiles")
 		return
 
 	for x in range(-INITIAL_GRID_SIZE, INITIAL_GRID_SIZE + 1):
 		for y in range(-INITIAL_GRID_SIZE, INITIAL_GRID_SIZE + 1):
 			var cell := Vector2i(x, y)
-			grid.set_cell(cell, CellData.new(null, grass))
-			create_sprite(false, cell, grass)
+			grid.set_cell(cell, CellData.new(null, dirt))
+			create_sprite(false, cell, dirt)
 
 
 # ==================== 落矿 ====================
@@ -210,11 +301,11 @@ func spawn_random_ore() -> void:
 	_spawn_ore_on(free_cells.pick_random())
 
 
-## 抽取矿石并生成；rarity 地皮会提高稀有度门槛
+## 抽取矿石并生成；rarity 地皮提高稀有度门槛，UNLOCK_ORE 天赋门控落矿池
+## （水晶永远排除：只在地块 spawn 上产生，见 TalentSystem.get_natural_spawn_ores）
 func _spawn_ore_on(cell: Vector2i) -> void:
-	var tile := grid.get_tile_at(cell)
-	var min_rarity := tile.min_rarity if tile != null else 1
-	var ore_def := db.roll_ore(min_rarity)
+	var min_rarity := grid.effective_min_rarity(cell)
+	var ore_def := db.roll_ore(min_rarity, _mine_rng, _talent_system.get_natural_spawn_ores())
 	if ore_def == null:
 		return
 	spawn_ore(cell, ore_def, 1)
@@ -267,9 +358,13 @@ func _mine_at(cell: Vector2i) -> void:
 	if ore == null or not ore.has_landed:
 		_hide_mining_bar()   # 点空处/未落地矿：收起进度条
 		return
-	# grass 地皮会放大受到的挖矿伤害
-	var damage := grid.hit_damage(ore, pickaxe_damage)
+	# 稿子伤害管线：基础 + 天赋 flat，grass 等倍率（effective），暴击乘区（TalentSystem）
+	var hit := _talent_system.hit_damage_details(
+		pickaxe_damage, grid.effective_damage_multiplier(cell), _mine_rng)
+	var damage: int = hit["damage"]
 	ore.hit()
+	# 伤害跳数（暴击彩色晃动）
+	_spawn_damage_number(ore.global_position + Vector2(0, -16), damage, hit["crit"])
 	if ore.take_damage(damage):
 		ore.kill_damage = damage   # 最后一击伤害 → 决定飞出力度
 		state.increment_ore_mined(ore.get_def().id)   # 玩家挖死才计开采
@@ -278,13 +373,78 @@ func _mine_at(cell: Vector2i) -> void:
 		_update_mining_bar(ore)   # 还活着：更新挖矿进度条
 
 
+## 挖矿伤害跳数：弹出伤害数字，动线与矿石破坏一致——随机 -45°~45° 向上抛出 + 重力自由落体
+## （速度 = 基础 + 伤害×系数，与 _launch_ore 同一套参数）。下落过程中渐隐后消失。
+## 暴击：彩虹变色 + 旋转晃动。全部在 _update_jump_numbers 逐帧积分，不用 Tween。
+func _spawn_damage_number(world_pos: Vector2, amount: int, is_crit: bool) -> void:
+	if jump_number_prototype == null:
+		return
+	var node := jump_number_prototype.instantiate() as Node2D
+	above_grid_layer.add_child(node)
+	node.global_position = world_pos
+	node.z_index = 4000   # 画在方块之上
+	var label := node.get_node_or_null("RichTextLabel") as RichTextLabel
+	if label != null:
+		label.bbcode_enabled = true
+		label.text = "[center]%d[/center]" % amount   # 居中：放大时不从一侧甩出
+		label.add_theme_font_size_override("normal_font_size", 20 if not is_crit else 28)
+		# 高对比：白字 + 深色描边（游戏背景近白，纯白字看不见）
+		label.add_theme_color_override("default_color", Color.WHITE)
+		label.add_theme_color_override("font_outline_color", Color(0.08, 0.06, 0.12, 1.0))
+		label.add_theme_constant_override("outline_size", 5)
+	node.scale = Vector2(0.1, 0.1)
+	# 与矿石破坏同款动线：力度 = 基础 + 伤害×系数，随机 -45°~45° 向上
+	var a := deg_to_rad(randf_range(-45.0, 45.0))
+	var speed := ore_launch_base + amount * ore_launch_per_damage
+	var velocity := Vector2(sin(a), -cos(a)) * speed
+	_jump_numbers.append({
+		"node": node, "label": label, "velocity": velocity,
+		"time": 0.0, "crit": is_crit,
+	})
+
+
+## 每帧积分伤害跳数：重力 + 位移（同矿石）；前 0.1s 弹入；下落（速度向下）后渐隐，消失即释放。
+func _update_jump_numbers(delta: float) -> void:
+	if _jump_numbers.is_empty():
+		return
+	var remaining: Array = []
+	for entry in _jump_numbers:
+		var node: Node2D = entry["node"]
+		var velocity: Vector2 = entry["velocity"]
+		entry["time"] += delta
+		velocity.y += ORE_GRAVITY * delta
+		entry["velocity"] = velocity
+		node.global_position += velocity * delta
+		# 前 0.1s 从 0.1 放大到 1（弹入）
+		var grow := clampf(entry["time"] / 0.1, 0.0, 1.0)
+		node.scale = Vector2.ONE * (0.1 + 0.9 * grow)
+		if entry["crit"]:
+			# 彩色：label 循环 hue；晃动：快速旋转
+			var label: RichTextLabel = entry["label"]
+			if label != null:
+				label.modulate = Color.from_hsv(fmod(entry["time"] * 6.0, 1.0), 1.0, 1.0)
+			node.rotation = sin(entry["time"] * 40.0) * 0.12
+		else:
+			node.rotation = 0.0
+		# 下落（速度向下）后渐隐，消失即释放
+		if velocity.y > 0.0:
+			node.modulate.a -= delta * 2.5
+		if node.modulate.a > 0.0:
+			remaining.append(entry)
+		else:
+			node.queue_free()
+	_jump_numbers = remaining
+
+
 ## 金币结算：订阅网格事件。
 ## 内部总额立即更新，但左上角数字用"跳数"动画滚到新值（小丑牌式结算），
 ## 时长 = 金币粒子播放时长 = 由该矿价值决定。矿石本身爆炸后飞出屏幕。
 func _on_ore_removed(ore: OreBlock, _cell: Vector2i, reward_ratio: float = 1.0) -> void:
-	var gained := int(roundf(grid.settle_value(ore) * reward_ratio))
-	state.add_coins(BigNumber.from_int(gained))
-	print("+%d 金币（总计 %s）" % [gained, state.coins.to_save_string()])
+	# 完整结算管线：settle × 矿价值 × 地块协同 × 全局矿石价值 × reward_ratio × 全局金币 × 永久倍率
+	var gained := _talent_system.compute_coin_gain(
+		grid.settle_value(ore), ore.get_def().id, grid.get_placed_counts(), reward_ratio)
+	state.add_coins(gained)
+	print("+%s 金币（总计 %s）" % [gained.to_compact_string(), state.coins.to_compact_string()])
 	if reward_ratio < 1.0:
 		# 水沉没（返还 10%）：不弹射，慢慢下沉渐隐，消失后在水面开金币粒子
 		_sink_ore(ore, gained)
@@ -297,7 +457,7 @@ func _on_ore_removed(ore: OreBlock, _cell: Vector2i, reward_ratio: float = 1.0) 
 ## 删除地块时连带移除的矿（不给金币）：也播爆炸+飞出（无金币粒子）
 func _on_ore_discarded(ore: OreBlock, _cell: Vector2i) -> void:
 	_play_explosion(ore.global_position, ore)
-	_launch_ore(ore, 0, ore.kill_damage)
+	_launch_ore(ore, BigNumber.zero(), ore.kill_damage)
 	_hide_mining_bar()   # 矿没了，进度条收起
 
 
@@ -388,7 +548,7 @@ func _explosion_animation_pool(names: PackedStringArray, crystal: bool) -> Array
 
 ## 给矿石一个随机向上角度(-45°~+45°)的初速度，之后自由落体；
 ## 力度 = 基础 + 最后一击伤害×系数（伤害越低越轻，大多落回屏幕底部）。
-func _launch_ore(ore: OreBlock, gained: int, kill_damage: int) -> void:
+func _launch_ore(ore: OreBlock, gained: BigNumber, kill_damage: int) -> void:
 	var a := deg_to_rad(randf_range(-45.0, 45.0))
 	var speed := ore_launch_base + kill_damage * ore_launch_per_damage
 	var velocity := Vector2(sin(a), -cos(a)) * speed
@@ -427,8 +587,8 @@ func _update_flying_ores(delta: float) -> void:
 		if edge_dir == Vector2.ZERO:
 			still.append(entry)
 			continue
-		var gained: int = entry["gained"]
-		if gained > 0:
+		var gained: BigNumber = entry["gained"]
+		if not gained.is_zero():
 			_play_coin_and_count(exit_pos, gained, edge_dir)
 		ore.queue_free()
 	_flying_ores = still
@@ -436,8 +596,10 @@ func _update_flying_ores(delta: float) -> void:
 
 ## 在落点播金币粒子：时长 = 价值决定；同时金币数字在该时长内跳数。
 ## dir 是粒子发射方向（侧面出屏就朝屏幕内喷）。
-func _play_coin_and_count(pos: Vector2, gained: int, dir := Vector2.UP) -> void:
+## 同时产生"金币飞向计数板"效果：边缘跳数 + 若干拖尾（见 _spawn_coin_flight）。
+func _play_coin_and_count(pos: Vector2, gained: BigNumber, dir := Vector2.UP) -> void:
 	var duration := _coin_duration(gained)
+	var spawned := _spawn_coin_flight(pos, gained, dir)
 	if coin_prototype != null:
 		var coin := coin_prototype.instantiate() as Node2D
 		above_grid_layer.add_child(coin)
@@ -461,7 +623,185 @@ func _play_coin_and_count(pos: Vector2, gained: int, dir := Vector2.UP) -> void:
 			particles.restart()
 		# 等粒子全部消失再释放，避免动画被截断（戛然而止）
 		_coin_cleanups.append({"node": coin, "particles": particles, "wait": duration + 1.0})
-	_count_up_coins(duration)
+	if spawned:
+		# 数字等拖尾消失后再震动上涨：把跳数挂到金币飞行完成时触发
+		_pending_coin = true
+		_pending_coin_duration = duration
+	else:
+		_count_up_coins(duration)   # 无飞行（如金币 0）立即上涨
+
+
+# ==================== 金币飞向计数板 ====================
+
+## 产生"金币飞向计数板"（主 UI 屏幕空间）：一个边缘跳数（沿出屏边缘切向飞出，放大后渐隐）
+## + 若干拖尾（从两侧 20°~30° 射出，随后被 max(增长拉力, 距离反比引力 K/距离) 吸向金币计数板，汇聚后消失）。
+## 返回是否产生了飞行（false 时调用方立即跳数，如金币为 0）。
+func _spawn_coin_flight(pos: Vector2, gained: BigNumber, dir: Vector2) -> bool:
+	if gained.is_zero() or _coin_flight_layer == null:
+		return false
+	var screen_pos := _screen_from_world(pos)
+	# 从边缘向屏幕内缩进，避免跳数标签被屏幕边缘裁掉一半
+	var view := get_viewport().get_visible_rect().size
+	screen_pos.x = clampf(screen_pos.x, 36.0, view.x - 36.0)
+	screen_pos.y = clampf(screen_pos.y, 36.0, view.y - 36.0)
+	_spawn_edge_number(screen_pos, gained, dir)
+	var counter := _money_counter_screen_pos()
+	for i in _coin_trail_count(gained):
+		_spawn_coin_trail(screen_pos, dir, counter)
+	return true
+
+
+## 边缘跳数（屏幕空间）：显示本次金币额，沿出屏边缘的切向（正上/正下/正左/正右）直线飞出，
+## 快速放大后渐隐。
+func _spawn_edge_number(pos: Vector2, gained: BigNumber, dir: Vector2) -> void:
+	var proto := coin_number_prototype if coin_number_prototype != null else jump_number_prototype
+	if proto == null or _coin_flight_layer == null:
+		return
+	var node := proto.instantiate() as Node2D
+	node.z_index = 4000   # 跳数盖在主 UI 之上（拖尾才在计数板之下）
+	_coin_flight_layer.add_child(node)
+	node.position = pos
+	var label := node.get_node_or_null("RichTextLabel") as RichTextLabel
+	if label != null:
+		label.bbcode_enabled = true
+		label.text = "[center]%s[/center]" % gained.to_compact_string()   # 居中：放大时不从一侧甩出
+		label.add_theme_font_size_override("normal_font_size", 30)
+		label.add_theme_color_override("default_color", Color(1.0, 0.9, 0.3))   # 金黄
+		label.add_theme_color_override("font_outline_color", Color(0.15, 0.1, 0.05, 1.0))
+		label.add_theme_constant_override("outline_size", 8)
+	# 只做竖直方向：底/侧边出屏 → 直上；顶部出屏 → 直下（不做左右偏移）
+	var fly_dir := Vector2.UP
+	if dir == Vector2.DOWN:
+		fly_dir = Vector2.DOWN
+	_coin_flights.append({
+		"kind": "num", "node": node, "velocity": fly_dir * COIN_NUM_SPEED,
+		"time": 0.0, "target": Vector2.ZERO, "pull": 0.0,
+	})
+
+
+## 单个拖尾（屏幕空间，细长）：从屏幕边缘沿出屏方向的扇形扩散飞出，
+## 后续由 _update_coin_flights 施加拉力拉向计数板
+func _spawn_coin_trail(pos: Vector2, dir: Vector2, counter: Vector2) -> void:
+	if tail_prototype == null or _coin_flight_layer == null:
+		return
+	var trail := tail_prototype.instantiate() as Node2D
+	trail.width = 3.0
+	trail.max_alpha = 0.8
+	trail.trail_length = 50
+	trail.line_z_index = -5   # 线画在主 UI 控件（计数板）之下
+	_coin_flight_layer.add_child(trail)
+	trail.position = Vector2.ZERO   # 静态锚点：节点不动，线画在图层里（喂 head 坐标）
+	# 初始：从两侧 20°~30° 射出（随机取左/右），先向两侧飞、再被吸回
+	var side := 1.0 if randf() < 0.5 else -1.0
+	var a := atan2(dir.y, dir.x) + side * deg_to_rad(randf_range(20.0, 30.0))
+	var velocity := Vector2(cos(a), sin(a)) * COIN_TRAIL_SPREAD
+	_coin_flights.append({
+		"kind": "trail", "node": trail, "head": pos, "velocity": velocity,
+		"time": 0.0, "target": counter, "target_rect": _money_counter_rect(),
+		"pull": COIN_TRAIL_PULL_START, "lateral_dir": 1.0 if randf() < 0.5 else -1.0,
+	})
+
+
+## 拖尾数量：随金币额增长但封顶（实际金币可能上亿，不能 1:1）
+func _coin_trail_count(gained: BigNumber) -> int:
+	var v := gained.to_float()
+	var n := int(roundf(sqrt(min(v, 1e6))))
+	return clampi(n, 2, COIN_TRAIL_COUNT_CAP)
+
+
+## 每帧处理金币飞行体；全部消失后触发挂起的金币跳数（先震动再上涨）
+func _update_coin_flights(delta: float) -> void:
+	_process_coin_flights(delta)
+	# 拖尾全部消失后，触发挂起的金币跳数（_count_up_coins 内先 _play_money_dance 震动）
+	if _coin_flights.is_empty() and _pending_coin:
+		_pending_coin = false
+		_count_up_coins(_pending_coin_duration)
+
+
+## 积分金币飞行体：
+##   跳数 → 沿切向匀速直线飞，前 0.12s 放大，0.3s 后渐隐；
+##   拖尾 → 扩散飞出 + max(增长拉力, 距离反比引力) 拉向计数板，靠近目标/超时渐隐消失。
+func _process_coin_flights(delta: float) -> void:
+	if _coin_flights.is_empty():
+		return
+	var remaining: Array = []
+	for e in _coin_flights:
+		var node: Node2D = e["node"]
+		e["time"] += delta
+		var time: float = e["time"]
+		var velocity: Vector2 = e["velocity"]
+		var target: Vector2 = e["target"]
+		var alive := true
+		if e["kind"] == "num":
+			node.global_position += velocity * delta
+			var grow := clampf(time / 0.12, 0.0, 1.0)
+			node.scale = Vector2.ONE * (0.1 + 0.9 * grow)
+			if time > 0.6:
+				node.modulate.a -= delta * 2.0
+			alive = node.modulate.a > 0.02
+		else:
+			# 拖尾：节点不动，跟踪"头部位置"并喂给拖尾画线
+			var head: Vector2 = e["head"]
+			var pull: float = e["pull"]
+			# 向左右随机方向的力，随时间衰减（先猛地侧飞，随后衰减让拉力接管）
+			var lateral_force := COIN_TRAIL_LATERAL_FORCE * exp(-COIN_TRAIL_LATERAL_DECAY * e["time"])
+			velocity += Vector2.RIGHT * float(e["lateral_dir"]) * lateral_force * delta
+			# 终点引力 = max(当前增长拉力, 距离反比引力 K/(dist/3))：越靠近计数板吸力越强，
+			# 与现有拉力取 max 只强不弱；min 距离下限防除零/爆炸
+			var dist := maxf(head.distance_to(target), 40.0)
+			var pull_eff := maxf(pull, COIN_TRAIL_DISTANCE_PULL / (dist / 3.0))
+			velocity += (target - head).normalized() * pull_eff * delta
+			velocity *= maxf(0.0, 1.0 - COIN_TRAIL_DAMPING * delta)
+			velocity = velocity.limit_length(COIN_TRAIL_MAX_SPEED)   # 限速防过冲
+			e["velocity"] = velocity
+			head += velocity * delta
+			# 夹取在视口内：侧飞顶到屏幕边缘时贴边滑行，不出屏
+			var view_size := get_viewport().get_visible_rect().size
+			head.x = clampf(head.x, 0.0, view_size.x)
+			head.y = clampf(head.y, 0.0, view_size.y)
+			e["head"] = head
+			e["pull"] = pull + COIN_TRAIL_PULL_GROWTH * delta
+			node.call("add_position", head)
+			# 头部进入计数板面板矩形或贴近中心（<60px）→ 快速消失（藏到面板后面/避免高速过冲）；
+			# 超时兜底（4.5s，绕大弧线的拖尾）→ 缓慢淡出，不会"戛然而止"
+			var rect: Rect2 = e["target_rect"]
+			if rect.has_point(head) or head.distance_to(target) < 90.0:
+				node.set_alpha(node.get_alpha() - delta * 3.2)
+			elif time > 4.5:
+				node.set_alpha(node.get_alpha() - delta * 1.5)
+			alive = node.get_alpha() > 0.02
+		if alive and time < 5.0:
+			remaining.append(e)
+		else:
+			node.queue_free()
+	_coin_flights = remaining
+
+
+## 世界坐标 → 屏幕坐标（相机投影）
+func _screen_from_world(world_pos: Vector2) -> Vector2:
+	if _camera == null:
+		return world_pos
+	var center := _camera.get_screen_center_position()
+	var view := get_viewport().get_visible_rect().size
+	return (world_pos - center) * _camera.zoom + view * 0.5
+
+
+## 金币计数板中心（屏幕坐标，金币飞行的汇聚目标）
+func _money_counter_screen_pos() -> Vector2:
+	if money_label != null:
+		var panel := money_label.get_parent().get_parent() as Control
+		if panel != null:
+			return panel.get_global_rect().get_center()
+	return Vector2(91, 53)   # 兜底：计数板左上角附近
+
+
+## 金币计数板面板矩形（屏幕坐标）：拖尾"藏到面板后面"的判断依据
+func _money_counter_rect() -> Rect2:
+	if money_label != null:
+		var panel := money_label.get_parent().get_parent() as Control
+		if panel != null:
+			return panel.get_global_rect()
+	return Rect2(48, 33, 86, 40)   # 兜底：计数板大致位置
 
 
 ## 每帧递减等待计时，粒子播完（含最后一批粒子寿命）后释放金币节点
@@ -480,8 +820,8 @@ func _update_coin_cleanups(delta: float) -> void:
 
 
 ## 金币粒子播放时长：价值越高播得越久（0.5s ~ 3s）
-func _coin_duration(gained: int) -> float:
-	return clampf(0.5 + gained * 0.006, 0.5, 3.0)
+func _coin_duration(gained: BigNumber) -> float:
+	return clampf(0.5 + gained.to_float() * 0.006, 0.5, 3.0)
 
 
 ## 金币数字跳数：从当前显示值滚到最新总额，时长与粒子一致（小丑牌式结算）
@@ -572,7 +912,7 @@ func _screen_world_rect() -> Rect2:
 
 
 ## 水沉没：矿石不弹射，慢慢下沉+渐隐，消失后在水面开金币粒子
-func _sink_ore(ore: OreBlock, gained: int) -> void:
+func _sink_ore(ore: OreBlock, gained: BigNumber) -> void:
 	var surface := ore.global_position
 	ore.modulate = Color.WHITE
 	ore.z_index = 4000
@@ -638,21 +978,33 @@ func _trigger_fire() -> void:
 
 # ==================== 存档 ====================
 
-## 有存档 → 恢复 state + 网格；无存档 → 新游戏初始化
+## 有存档 → 恢复 state + 网格；无存档 → 新游戏初始化。
+## 升华后 run_version 失配（天赋场景跨进程写入）→ 网格是旧轮的，重建新一轮。
 func _load_or_init() -> void:
 	var data := _save_manager.load()
 	if data.is_empty():
-		grid_init()
-		spawn_ore(Vector2i.ONE, db.get_ore(&"gold"), 1)
-		spawn_random_ore()
-		spawn_random_ore()
+		_init_new_run()
 		return
 	state.load_from_dict(data.get("state", {}))
-	_restore_grid(data.get("grid", {}))
+	var saved_grid: Dictionary = data.get("grid", {})
+	var grid_run: int = int(saved_grid.get("run_version", 0))
+	if grid_run != state.run_version:
+		push_warning("存档: 网格 run_version(%d) ≠ state(%d)，升华后重建新一轮" % [grid_run, state.run_version])
+		_init_new_run()
+		return
+	_restore_grid(saved_grid)
 	# 兜底：存档缺中心地块（旧档/损坏）→ 重新初始化保证可玩
 	if not grid.has_cell(GridModel.CENTER_CELL):
 		push_warning("存档恢复: 缺少中心地块，重新初始化")
-		grid_init()
+		_init_new_run()
+
+
+## 新一轮初始化：初始 dirt 网格 + 金币种子矿（显式 spawn，绕过落矿门控）
+func _init_new_run() -> void:
+	grid_init()
+	spawn_ore(Vector2i.ONE, db.get_ore(&"gold"), 1)
+	spawn_random_ore()
+	spawn_random_ore()
 
 
 ## 从快照重建网格：先数据（cells），再场景（sprite），最后矿石（工厂）
@@ -679,12 +1031,17 @@ func _restore_grid(data: Dictionary) -> void:
 			ore.has_landed = true
 
 
-## 组装存档内容（state + 网格快照）并写盘
+## 组装存档内容（state + 网格快照）并写盘。
+## grid.run_version = state.run_version：主场景启动用它判断网格是否属于当前轮。
 func _save_game() -> void:
 	var payload := {
 		"version": SaveManager.SAVE_VERSION,
 		"state": state.to_dict(),
-		"grid": {"cells": grid.snapshot_cells(), "ores": grid.snapshot_ores()},
+		"grid": {
+			"run_version": state.run_version,
+			"cells": grid.snapshot_cells(),
+			"ores": grid.snapshot_ores(),
+		},
 	}
 	_save_manager.save(payload)
 	_save_dirty = false
@@ -693,6 +1050,11 @@ func _save_game() -> void:
 func _on_autosave_tick() -> void:
 	if _save_dirty:
 		_save_game()
+
+
+## 场景切换前强制存档（进入天赋界面等用），不依赖脏标记/定时器
+func save_now() -> void:
+	_save_game()
 
 
 func _mark_save_dirty() -> void:
@@ -717,13 +1079,25 @@ var selected_tile: TileDef = null
 
 ## 放置模式切换信号：视图订阅它来同步抽屉按钮状态
 signal tile_selection_changed(tile: TileDef)
+## _ready 完成信号：抽屉等视图在此时刷新（TalentSystem 已就绪，可查解锁状态）
+signal initialized
 
 
-## 抽屉按钮调用：切换某地皮为当前放置目标；再点一次取消选择
+## 该地块是否已在天赋中解锁（UNLOCK_TILE 门控；抽屉据此隐藏未解锁按钮）。
+## TalentSystem 未就绪时放行（避免启动时序竞态把全部按钮藏掉）。
+func is_tile_unlocked(tile_id: StringName) -> bool:
+	return _talent_system == null or _talent_system.has_unlocked_tile(tile_id)
+
+
+## 抽屉按钮调用：切换某地皮为当前放置目标；再点一次取消选择。
+## 未在天赋中解锁的地块不能进入放置模式。
 func toggle_tile_selection(id: StringName) -> void:
 	var def := db.get_tile(id)
 	if def == null:
 		push_warning("toggle_tile_selection: 未知地皮 %s" % id)
+		return
+	if selected_tile != def and not is_tile_unlocked(id):
+		push_warning("toggle_tile_selection: %s 未解锁（先去天赋树解锁）" % def.display_name)
 		return
 	selected_tile = null if selected_tile == def else def
 	tile_selection_changed.emit(selected_tile)
@@ -742,8 +1116,18 @@ func clear_tile_selection() -> void:
 func _place_selected(cell: Vector2i) -> void:
 	if selected_tile == null:
 		return
+	# 防御：未解锁地块不可放置（正常入口已被抽屉/toggle 拦截）
+	if not is_tile_unlocked(selected_tile.id):
+		push_warning("_place_selected: %s 未解锁" % selected_tile.display_name)
+		return
+	# 放置计价：base × 1.15^已放置；先扣钱再写网格（失败回滚）
+	var cost := TilePricing.placement_cost(selected_tile, grid.get_placed_count(selected_tile.id))
+	if not state.spend_coins(cost):
+		print("金币不足：%s 需要 %s" % [selected_tile.display_name, cost.to_compact_string()])
+		return
 	var result := grid.try_place_tile(cell, selected_tile)
 	if not result.is_ok():
+		state.add_coins(cost)   # 放置失败回滚
 		print("放置失败: %s" % result.message)
 		return
 	create_sprite(false, cell, selected_tile)
@@ -772,10 +1156,20 @@ func _batch_place_if_held() -> void:
 
 
 func _remove_tile_at(cell: Vector2i) -> void:
+	var tile := grid.get_tile_at(cell)
+	if tile == null:
+		print("删除失败: 该位置没有地块")
+		return
+	var placed_before := grid.get_placed_count(tile.id)
 	var result := grid.try_remove_tile(cell)
 	if not result.is_ok():
 		print("删除失败: %s" % result.message)
 		return
+	# 卖出返还 25% 的当前买入价（移除前数量计算）
+	var refund := TilePricing.refund_value(tile, placed_before)
+	if not refund.is_zero():
+		state.add_coins(refund)
+		print("卖出 %s 返还 %s" % [tile.display_name, refund.to_compact_string()])
 	var node := tiles_by_cell.get(cell) as Block
 	if node != null:
 		tiles_by_cell.erase(cell)

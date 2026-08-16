@@ -9,3 +9,4 @@ id = &"water"
 display_name = "水域"
 texture = ExtResource("2_tex")
 behavior = 1
+base_cost = 1250

@@ -11,3 +11,4 @@ texture = ExtResource("2_tex")
 behavior = 5
 tick_interval = 5.0
 spawn_ore_id = &"crystal"
+base_cost = 2500000

@@ -8,3 +8,4 @@ script = ExtResource("1_def")
 id = &"dirt"
 display_name = "泥土"
 texture = ExtResource("2_tex")
+base_cost = 10

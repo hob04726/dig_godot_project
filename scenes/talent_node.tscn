@@ -14,11 +14,3 @@ script = ExtResource("1_node")
 position = Vector2(0, -6)
 texture = SubResource("AtlasTexture_tmp")
 scale = Vector2(4, 4)
-
-[node name="Name" type="Label" parent="."]
-offset_left = -45.0
-offset_top = 30.0
-offset_right = 45.0
-offset_bottom = 48.0
-horizontal_alignment = 1
-text = "天赋"

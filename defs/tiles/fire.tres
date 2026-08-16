@@ -11,3 +11,4 @@ texture = ExtResource("2_tex")
 behavior = 10
 tick_interval = 1.0
 damage = 10
+base_cost = 5000
