@@ -12,11 +12,15 @@ func _init() -> void:
 	var state := GameState.new()
 	var ts := TalentSystem.new(state, db)
 
-	# --- 开局已购：coal/dirt 天然解锁；水晶永远排除出自然落矿池 ---
-	_check(ts.has_unlocked_ore(&"coal"), "coal 开局已购解锁")
-	_check(ts.has_unlocked_tile(&"dirt"), "dirt 开局已购解锁")
+	# --- 开局无任何解锁：coal/dirt 也需手动购买；水晶永远排除出自然落矿池 ---
+	_check(not ts.has_unlocked_ore(&"coal"), "coal 开局未解锁（需手动购买）")
+	_check(not ts.has_unlocked_tile(&"dirt"), "dirt 开局未解锁（需手动购买）")
+	_check(ts.get_natural_spawn_ores().is_empty(), "开局自然落矿池为空")
+	state.record_talent_purchase(&"unlock_coal")
+	state.record_talent_purchase(&"unlock_tile_dirt")
+	ts.invalidate()
 	var natural := ts.get_natural_spawn_ores()
-	_check(natural.has(&"coal"), "自然落矿池含 coal")
+	_check(natural.has(&"coal"), "购买 unlock_coal 后自然落矿池含 coal")
 	_check(not natural.has(&"crystal"), "自然落矿池排除水晶")
 	state.record_talent_purchase(&"unlock_crystal")
 	ts.invalidate()

@@ -5,7 +5,7 @@
 //  - 矿物价值升级 10 级/矿（原 15 级）；条件用累计开采数 ore_mined。
 //  - 地块：天赋树里只做"解锁"，放置/卖出在游戏里计价（base×1.15^已放置，卖=25%）。
 //  - 地块行为升级 5 级/块（新增）。
-//  - 开局只有 dirt；grass 也需要购买。
+//  - 地块：dirt/coal 的解锁也是 0 费但需手动点击购买（2026-08-16 与用户确认，不再"开局已购买"）；grass 及之后都要花金币。
 //  - 删：Gold Link、协同 I/II、离线收益、bulk/buy_max、meta_gold_research。
 //  - 升华点公式（Cookie Clicker 式）：总点=floor(cbrt(累计金币/1e6))，升华时获得差值，每点 +1% 金币获取。
 import { writeFileSync } from 'node:fs';
@@ -44,7 +44,7 @@ const ORES = ['coal', 'iron', 'zinc', 'gold', 'crystal', 'obsidian', 'diamond', 
 const ORE_NAME = { coal: '煤矿', iron: '铁矿', zinc: '锌矿', gold: '金矿', crystal: '水晶矿', obsidian: '黑曜石', diamond: '钻石矿', cat: '猫矿' };
 const ORE_COLOR = { gold: 'gold' }; // 金矿名称用黄色
 const ORE_UNLOCK = [
-  { id: 'coal', cost: 0n, prereq: '', cond: '开局已购买' },
+  { id: 'coal', cost: 0n, prereq: '', cond: '' },   // 0 费但需手动点击解锁
   { id: 'iron', cost: 250n, prereq: 'unlock_coal', cond: 'coal_mined ≥ 50' },
   { id: 'zinc', cost: 2750n, prereq: 'unlock_iron', cond: 'iron_mined ≥ 50' },
   { id: 'gold', cost: 30000n, prereq: 'unlock_zinc', cond: 'zinc_mined ≥ 50' },
@@ -219,7 +219,7 @@ TILES.forEach((tile, i) => {
     cost: tile.unlock.toString(), display: fmtDisplay(tile.unlock), mantissa: fmtMantissa(tile.unlock), exp: tile.unlock === 0n ? '0' : String(Math.floor(Math.log10(Number(tile.unlock)))),
     col: 0, row: i + 1,
     prereq: i === 0 ? '' : `unlock_tile_${TILES[i - 1].id}`,
-    cond: tile.unlock === 0n ? '开局已购买' : `已解锁前置地块 ${TILES[i - 1].name}`,
+    cond: i === 0 ? '' : `已解锁前置地块 ${TILES[i - 1].name}`,   // 泥土 0 费但需手动点击解锁
     effect: 'UNLOCK_TILE', targets: tile.id, op: 'UNLOCK', value: 1,
     group: '地块解锁', branch: tile.id, level: 'Unlock', stage: '本轮核心',
   });

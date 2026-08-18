@@ -157,6 +157,7 @@ zoom = Vector2(2.5, 2.5)
 script = ExtResource("2_0wfyh")
 
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="World" unique_id=167562351]
+visible = false
 z_index = 4096
 scale = Vector2(0.5, 0.5)
 sprite_frames = SubResource("SpriteFrames_bjqgx")

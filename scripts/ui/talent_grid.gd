@@ -12,7 +12,7 @@ enum TreeMode { NORMAL, ASCENSION }
 
 @export var node_scene: PackedScene = null
 @export var tooltip_prototype: PackedScene = null   # scenes/vfx/talent_label.tscn
-@export var impact_prototype: PackedScene = null    # scenes/vfx/impact.tscn 购买特效（5 种对称冲击随机选一）
+@export var unlock_prototype: PackedScene = null    # scenes/vfx/unlock.tscn 购买特效（蓝/绿/红闪光爆发随机选一）
 @export var cell_size := Vector2(100, 100)
 @export var camera: Camera2D = null
 @export var gold_label: RichTextLabel = null
@@ -154,12 +154,8 @@ func _build_tree() -> void:
 		add_child(node)
 		_nodes.append(node)
 		_nodes_by_id[def.id] = node
-		# "开局已购买"的节点预置为已购买（如 unlock_coal / unlock_tile_dirt），
-		# 这样它们的分支链（矿价值升级在上、地块协同在左）初始就能揭示出来；
-		# 初始直置状态，不播购买动画
-		if def.unlock_condition == "开局已购买":
-			node.set_state(TalentNode.State.PURCHASED, false)
-			_purchased[def.id] = true
+		# 所有天赋（含 0 费的 unlock_coal / unlock_tile_dirt）都需手动购买，
+		# 购买记录统一走 GameState.record_talent_purchase 进存档
 	if _grid_overlay != null:
 		_grid_overlay.grid_bounds = _compute_bounds()
 	_refresh_all(false)   # 初始/重建展示直置状态，不做弹跳
@@ -168,11 +164,15 @@ func _build_tree() -> void:
 
 ## 前置解锁刷新：所有前置（含升华前置）已购买才显示，并更新可购买状态。
 ## animated=false 用于初始/重建（直置状态，不弹跳）；购买后的刷新默认动画。
-## 隐藏节点也直置样式（LOCKED 0.3/0.9），避免揭示时才从默认值跳变。
+## 隐藏节点也直置样式（LOCKED 0.3/0.7），避免揭示时才从默认值跳变。
+## 刚从隐藏揭示出来的节点传 just_revealed=true（播 0→1.1→base 弹跳）；
+## 本就在屏上、只是买得起/买不起变化的节点走平滑过渡。
 func _refresh_all(animated := true) -> void:
 	for node in _nodes:
+		var was_visible := node.visible
 		node.visible = _is_revealed(node)
-		_refresh(node, animated)
+		var just_revealed := animated and node.visible and not was_visible
+		_refresh(node, animated, just_revealed)
 
 
 func _is_revealed(node: TalentNode) -> bool:
@@ -185,10 +185,10 @@ func _is_revealed(node: TalentNode) -> bool:
 	return true
 
 
-func _refresh(node: TalentNode, animated := true) -> void:
+func _refresh(node: TalentNode, animated := true, just_revealed := false) -> void:
 	if node.state == TalentNode.State.PURCHASED:
 		return
-	node.set_state(TalentNode.State.AVAILABLE if _can_afford(node) else TalentNode.State.LOCKED, animated)
+	node.set_state(TalentNode.State.AVAILABLE if _can_afford(node) else TalentNode.State.LOCKED, animated, just_revealed)
 
 
 ## 可负担判断：按货币（金币 / 升华点）读真实 GameState 余额
@@ -236,40 +236,41 @@ func _click(node: TalentNode) -> void:
 	node.set_state(TalentNode.State.PURCHASED)
 	_purchased[node.talent_id] = true
 	_talent_system.invalidate()
-	_play_purchase_impact(node)   # 购买特效：节点位置随机播放 impact
+	_play_purchase_unlock(node)   # 购买特效：节点位置随机播放 unlock 闪光爆发
 	print("解锁天赋：%s，剩余 %s %s" % [node.display_name, _current_balance().to_compact_string(), node.currency])
-	# 等购买弹跳（0.9→1.2→1）播完，再揭示新解锁节点（0→1.2→0.9 弹跳出现）
-	await get_tree().create_timer(TalentNode.PURCHASE_POP_TIME).timeout
+	# 卡在爆发高点（下蹲+过冲≈0.24s）揭示新解锁节点（0→base+0.3→base 弹跳出现）
+	await get_tree().create_timer(TalentNode.REVEAL_DELAY).timeout
 	_refresh_all()   # 解锁后可能揭示下一级天赋
 	_persist()
 	_update_gold_label()
 
 
-## 购买特效：在节点位置实例化 impact（scenes/vfx/impact.tscn），
-## 从 5 种对称冲击动画里随机选一个播放，播完（或超时兜底）自毁。
-func _play_purchase_impact(node: TalentNode) -> void:
-	if impact_prototype == null:
+## 购买特效：在节点位置实例化 unlock（scenes/vfx/unlock.tscn），
+## 从蓝/绿/红三种 round_sparkle_burst 闪光爆发里随机选一个播放，播完（或超时兜底）自毁。
+func _play_purchase_unlock(node: TalentNode) -> void:
+	if unlock_prototype == null:
 		return
-	var impact := impact_prototype.instantiate() as Node2D
-	add_child(impact)
-	impact.z_index = 50   # 画在天赋节点之上、网格边框(100)之下
-	impact.global_position = node.global_position
-	var sprite := impact.get_node_or_null("AnimatedSprite2D") as AnimatedSprite2D
+	var vfx := unlock_prototype.instantiate() as Node2D
+	add_child(vfx)
+	vfx.z_index = 50   # 画在天赋节点之上、网格边框(100)之下
+	vfx.scale = Vector2.ONE * 1.4   # 64px 帧放大到 ~90px，刚好罩住节点命中框
+	vfx.global_position = node.global_position
+	var sprite := vfx.get_node_or_null("AnimatedSprite2D") as AnimatedSprite2D
 	if sprite == null or sprite.sprite_frames == null:
-		impact.queue_free()
+		vfx.queue_free()
 		return
 	var names := sprite.sprite_frames.get_animation_names()
 	if names.is_empty():
-		impact.queue_free()
+		vfx.queue_free()
 		return
 	sprite.frame = 0
 	sprite.play(names[randi() % names.size()])
-	sprite.animation_finished.connect(impact.queue_free)
-	# 兜底：动画最长约 0.35s，超时也释放（防止意外残留）
-	get_tree().create_timer(0.8).timeout.connect(impact.queue_free)
+	sprite.animation_finished.connect(vfx.queue_free)
+	# 兜底：动画最长 19 帧/30fps ≈ 0.63s，超时也释放（防止意外残留）
+	get_tree().create_timer(1.0).timeout.connect(vfx.queue_free)
 
 
-## 购买状态同步自 GameState（普通 + 升华）；"开局已购买"节点在 _build_tree 里补
+## 购买状态同步自 GameState（普通 + 升华），是天赋已购记录的唯一来源
 func _sync_purchased() -> void:
 	_purchased.clear()
 	for id in _state.talent_purchases:

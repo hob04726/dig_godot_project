@@ -231,13 +231,11 @@ func _ensure() -> void:
 		_rebuild()
 
 
-## 已购判定：本轮普通 / 永久升华 / CSV 标"开局已购买"
+## 已购判定：本轮普通 / 永久升华（以 GameState 记录为准，购买才会进存档）
 func _is_purchased(def: TalentDef) -> bool:
 	if def == null:
 		return false
-	if _state.has_talent(def.id) or _state.has_ascension(def.id):
-		return true
-	return def.unlock_condition == "开局已购买"
+	return _state.has_talent(def.id) or _state.has_ascension(def.id)
 
 
 func _rebuild() -> void:

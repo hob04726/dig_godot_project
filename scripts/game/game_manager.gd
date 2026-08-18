@@ -8,9 +8,9 @@ const INITIAL_GRID_SIZE := 1   # 初始 3x3 草地（半径 1）
 const ORE_GRAVITY := 700.0
 
 # 放置模式下指针颜色：绿=可放 / 橙=可删 / 红=都不行
-const POINTER_PLACE_COLOR := Color(0.4, 1, 0.4)
-const POINTER_REMOVE_COLOR := Color(1, 0.72, 0.25)
-const POINTER_BLOCKED_COLOR := Color(1, 0.35, 0.35)
+const POINTER_PLACE_COLOR := Color(0.4, 1, 0.4)       # 可放置且金币充足：绿
+const POINTER_NO_MONEY_COLOR := Color(1, 0.35, 0.35)  # 可放置但金币不足：红
+const POINTER_BLOCKED_COLOR := Color(1, 0.72, 0.25)   # 位置不可放置：橙
 
 ## 数据层：网格（唯一写入口 + 唯一事件源）
 var grid := GridModel.new()
@@ -79,6 +79,9 @@ const RECORD_WINDOW := 60.0   # 一分钟：没在这段时间内破纪录就把
 ## 基础调低让大多数矿落回底部，只有高伤害（暴击/草地）才飞得远。
 @export var ore_launch_base := 120.0
 @export var ore_launch_per_damage := 25.0
+## 矿石飞出时的旋转角速度区间（度/秒，随机正负方向）
+@export var ore_spin_min := 140.0
+@export var ore_spin_max := 360.0
 ## 爆炸大小：基础缩放 + 每点最后一击伤害附加的缩放
 @export var explosion_scale_base := 0.3
 @export var explosion_scale_per_damage := 0.015
@@ -123,7 +126,17 @@ var _cursor_mine: Texture2D = null
 var _cursor_place: Texture2D = null
 var _cursor_default: Texture2D = null
 ## 当前生效的光标（""=默认），避免每帧重复调用 Input.set_custom_mouse_cursor
-var _current_cursor := &""
+var _current_cursor := ""          # want + 染色/摇晃姿态键（变化才调原生接口）
+var _cursor_tint_cache: Dictionary = {}   # Color -> 染色后的 Image（只生成一次）
+## 挖矿光标待机摇晃：预生成的左右旋转帧 + 节奏状态机
+var _cursor_mine_left: Image = null
+var _cursor_mine_right: Image = null
+var _cursor_wiggle_angle := 0.0    # 当前姿态（0 / ±CURSOR_WIGGLE_ANGLE）
+var _cursor_wiggle_elapsed := 0.0
+var _cursor_wiggling := false
+var _cursor_wiggle_wait := 1.2     # 距下次摇晃的等待（随机化）
+const CURSOR_WIGGLE_ANGLE := 20.0
+const CURSOR_WIGGLE_STEP := 0.07   # 每个姿态停留时长
 
 var _spawn_timer: Timer
 var _autosave_timer: Timer
@@ -203,11 +216,39 @@ func _setup_cursors() -> void:
 	_cursor_mine = load("res://assets/cursor/Tiles/tile_0108.png") as Texture2D
 	_cursor_place = load("res://assets/cursor/Tiles/tile_0109.png") as Texture2D
 	_cursor_default = load("res://assets/cursor/Tiles/tile_0026.png") as Texture2D
+	# 挖矿光标摇晃用的左右旋转帧（16×16 小图，逐像素最近邻旋转开销可忽略）
+	if _cursor_mine != null:
+		var src := _cursor_mine.get_image()
+		_cursor_mine_left = _rotate_image(src, CURSOR_WIGGLE_ANGLE)
+		_cursor_mine_right = _rotate_image(src, -CURSOR_WIGGLE_ANGLE)
+
+
+## 最近邻旋转小图（光标用，像素风不需要插值），角度为度
+func _rotate_image(src: Image, angle_deg: float) -> Image:
+	var w := src.get_width()
+	var h := src.get_height()
+	var dst := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var rad := deg_to_rad(angle_deg)
+	var cs := cos(rad)
+	var sn := sin(rad)
+	var cx := (w - 1) * 0.5
+	var cy := (h - 1) * 0.5
+	for y in h:
+		for x in w:
+			var dx := x - cx
+			var dy := y - cy
+			# 逆变换取源像素
+			var sx := int(round(cs * dx + sn * dy + cx))
+			var sy := int(round(-sn * dx + cs * dy + cy))
+			if sx >= 0 and sy >= 0 and sx < w and sy < h:
+				dst.set_pixel(x, y, src.get_pixel(sx, sy))
+	return dst
 
 
 func _process(delta: float) -> void:
 	show_target()
 	update_hover()
+	_update_cursor_wiggle(delta)
 	_update_cursor()
 	_batch_place_if_held()
 	_batch_remove_if_held()
@@ -219,27 +260,98 @@ func _process(delta: float) -> void:
 	_update_fire()
 
 
+## 悬停中的矿（失效引用安全）：矿被挖掉后 _hovered_node 会短暂指向已释放实例
+func _hovered_ore() -> OreBlock:
+	if _hovered_node != null and is_instance_valid(_hovered_node) and _hovered_node is OreBlock:
+		return _hovered_node as OreBlock
+	return null
+
+
+## 挖矿光标待机摇晃状态机：悬停矿上时每隔 1.2~2.8s 甩一下（+角度 → -角度 → 回正）。
+## 非 mine 光标时立即复位，摇晃姿态通过 _cursor_wiggle_angle 参与 _update_cursor 的键比较。
+func _update_cursor_wiggle(delta: float) -> void:
+	if _hovered_ore() != null and selected_tile == null \
+			and get_viewport().gui_get_hovered_control() == null:
+		_cursor_wiggle_elapsed += delta
+		if not _cursor_wiggling:
+			if _cursor_wiggle_elapsed >= _cursor_wiggle_wait:
+				_cursor_wiggling = true
+				_cursor_wiggle_elapsed = 0.0
+		else:
+			var t := _cursor_wiggle_elapsed
+			if t < CURSOR_WIGGLE_STEP:
+				_cursor_wiggle_angle = CURSOR_WIGGLE_ANGLE
+			elif t < CURSOR_WIGGLE_STEP * 3.0:
+				_cursor_wiggle_angle = -CURSOR_WIGGLE_ANGLE
+			elif t < CURSOR_WIGGLE_STEP * 4.0:
+				_cursor_wiggle_angle = CURSOR_WIGGLE_ANGLE * 0.5
+			elif t < CURSOR_WIGGLE_STEP * 5.0:
+				_cursor_wiggle_angle = 0.0
+			else:
+				_cursor_wiggling = false
+				_cursor_wiggle_elapsed = 0.0
+				_cursor_wiggle_wait = randf_range(1.2, 2.8)
+				_cursor_wiggle_angle = 0.0
+	else:
+		_cursor_wiggling = false
+		_cursor_wiggle_elapsed = 0.0
+		_cursor_wiggle_angle = 0.0
+
+
 ## 按当前状态刷新鼠标光标：放置模式(0109) > 悬停矿(0108) > 默认(0026)；鼠标在 UI 上时用默认。
-## 只在目标变化时调用 Input.set_custom_mouse_cursor（原生调用有成本）。
+## 放置模式下光标图按状态染色（绿=可放且钱够 / 红=钱不够 / 橙=位置不可放），
+## 悬停矿时按 _cursor_wiggle_angle 换左右旋转帧（待机摇晃），
+## 染色图缓存复用；只在状态键变化时调用 Input.set_custom_mouse_cursor（原生调用有成本）。
 func _update_cursor() -> void:
 	var want := &""
+	var tint := Color.WHITE
 	if selected_tile != null:
 		want = &"place"
-	elif _hovered_node is OreBlock:
+		if grid.can_place_tile(_hovered_cell):
+			tint = POINTER_PLACE_COLOR if _can_afford_selected() else POINTER_NO_MONEY_COLOR
+		else:
+			tint = POINTER_BLOCKED_COLOR
+	elif _hovered_ore() != null:
 		want = &"mine"
 	if get_viewport().gui_get_hovered_control() != null:
 		want = &""   # 鼠标悬停在 UI 控件（抽屉等）上时保持默认
-	if want == _current_cursor:
+		tint = Color.WHITE
+	var key := str(want) + "|" + tint.to_html()
+	if want == &"mine":
+		key += "|" + str(_cursor_wiggle_angle)
+	if key == _current_cursor:
 		return
-	_current_cursor = want
+	_current_cursor = key
+	if want == &"place" and _cursor_place != null:
+		Input.set_custom_mouse_cursor(_tinted_cursor_image(_cursor_place, tint), Input.CURSOR_ARROW)
+		return
+	if want == &"mine":
+		var img := _cursor_mine.get_image()
+		if _cursor_wiggle_angle > 0.0 and _cursor_mine_left != null:
+			img = _cursor_mine_left
+		elif _cursor_wiggle_angle < 0.0 and _cursor_mine_right != null:
+			img = _cursor_mine_right
+		Input.set_custom_mouse_cursor(img, Input.CURSOR_ARROW)
+		return
 	var tex := _cursor_default
-	match want:
-		&"mine": tex = _cursor_mine
-		&"place": tex = _cursor_place
 	if tex != null:
 		Input.set_custom_mouse_cursor(tex.get_image(), Input.CURSOR_ARROW)
 	else:
 		Input.set_custom_mouse_cursor(null, Input.CURSOR_ARROW)
+
+
+## 生成光标的染色副本（正片叠底乘色，光标图本身是白色系所以染出来就是目标色）。
+## 光标图很小（几十像素见方），逐像素乘一次后按颜色缓存。
+func _tinted_cursor_image(base: Texture2D, tint: Color) -> Image:
+	if _cursor_tint_cache.has(tint):
+		return _cursor_tint_cache[tint]
+	var img: Image = base.get_image().duplicate()
+	for y in img.get_height():
+		for x in img.get_width():
+			var px: Color = img.get_pixel(x, y)
+			img.set_pixel(x, y, Color(px.r * tint.r, px.g * tint.g, px.b * tint.b, px.a))
+	_cursor_tint_cache[tint] = img
+	return img
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -548,13 +660,47 @@ func _explosion_animation_pool(names: PackedStringArray, crystal: bool) -> Array
 
 ## 给矿石一个随机向上角度(-45°~+45°)的初速度，之后自由落体；
 ## 力度 = 基础 + 最后一击伤害×系数（伤害越低越轻，大多落回屏幕底部）。
+## 同时给一个随机角速度，飞行途中自由旋转（翻跟头）。
+## 注意：矿石贴图透明边很多（如 256×352 里矿石只画在底部），直接转 sprite 会绕
+## 贴图中心甩出诡异弧线——这里把旋转支点（sprite.offset）挪到 alpha 包围盒中心
+## （矿石视觉中心），并把节点位置反向补偿同样距离：轨迹与原来完全一致，原地自转。
 func _launch_ore(ore: OreBlock, gained: BigNumber, kill_damage: int) -> void:
 	var a := deg_to_rad(randf_range(-45.0, 45.0))
 	var speed := ore_launch_base + kill_damage * ore_launch_per_damage
 	var velocity := Vector2(sin(a), -cos(a)) * speed
+	var spin := deg_to_rad(randf_range(ore_spin_min, ore_spin_max)) * (1.0 if randf() < 0.5 else -1.0)
+	_center_ore_pivot(ore)
 	ore.z_index = 4000   # 飞到最上层（CanvasItem 上限 4096 内）
 	ore.modulate = Color.WHITE   # 去掉悬停/下落残留的染色
-	_flying_ores.append({"ore": ore, "velocity": velocity, "gained": gained})
+	_flying_ores.append({"ore": ore, "velocity": velocity, "gained": gained, "spin": spin})
+
+
+## 贴图 alpha 包围盒中心缓存（避免每次发射都 get_image）
+var _tex_vis_center_cache := {}
+
+
+## 把 sprite 的旋转支点挪到贴图内容（alpha 包围盒）中心，节点位置反向补偿：
+## 发射瞬间矿石在屏幕上的位置不变，之后旋转绕矿石视觉中心原地进行
+func _center_ore_pivot(ore: OreBlock) -> void:
+	var sprite := ore.sprite
+	if sprite == null or sprite.texture == null:
+		return
+	var tex := sprite.texture
+	if not _tex_vis_center_cache.has(tex):
+		var c := tex.get_size() * 0.5   # 兜底：全透明就用贴图中心
+		var img := tex.get_image()
+		if img != null:
+			var used := img.get_used_rect()
+			if used.has_area():
+				c = used.get_center()
+		_tex_vis_center_cache[tex] = c
+	var vis: Vector2 = _tex_vis_center_cache[tex]
+	var tex_center := tex.get_size() * 0.5
+	var d := (vis - tex_center) * sprite.scale   # 矿石视觉中心相对节点的世界偏移
+	if d.is_zero_approx():
+		return
+	sprite.offset = tex_center - vis             # 之后旋转绕矿石视觉中心
+	ore.global_position += d                     # 反向补偿，画面位置不变（发射时 rotation=0）
 
 
 func _update_flying_ores(delta: float) -> void:
@@ -568,6 +714,9 @@ func _update_flying_ores(delta: float) -> void:
 		velocity.y += ORE_GRAVITY * delta
 		entry["velocity"] = velocity
 		ore.global_position += velocity * delta
+		# 只转精灵（原地自转）：根节点保持纯平移，轨迹不受旋转影响
+		if ore.sprite:
+			ore.sprite.rotation += entry["spin"] * delta
 		# 判断从哪个边出屏，金币粒子在那边朝屏幕内发射
 		var p := ore.global_position
 		var edge_dir := Vector2.ZERO
@@ -1198,7 +1347,8 @@ func _batch_remove_if_held() -> void:
 	_remove_tile_at(_hovered_cell)
 
 
-## 放置模式下给鼠标指针染色：绿=可放、橙=可删（矿石会随地块一起删）、红=都不行（中心/桥/太远）
+## 放置模式下给格子高亮指针（世界内 AnimatedSprite2D）染色：绿=可放且钱够、红=钱不够、橙=位置不可放。
+## 鼠标光标本体的同款染色在 _update_cursor 里做。
 func _update_pointer_tint() -> void:
 	if pointer == null:
 		return
@@ -1206,11 +1356,17 @@ func _update_pointer_tint() -> void:
 		pointer.modulate = Color.WHITE
 		return
 	if grid.can_place_tile(_hovered_cell):
-		pointer.modulate = POINTER_PLACE_COLOR
-	elif grid.can_remove_tile(_hovered_cell):
-		pointer.modulate = POINTER_REMOVE_COLOR
+		# 可放置：金币充足绿 / 不足红
+		pointer.modulate = POINTER_PLACE_COLOR if _can_afford_selected() else POINTER_NO_MONEY_COLOR
 	else:
+		# 位置不可放置（含已被占用/不可达的格子）：橙
 		pointer.modulate = POINTER_BLOCKED_COLOR
+
+
+## 当前选中地块的放置价（base × 1.15^已放置）是否负担得起
+func _can_afford_selected() -> bool:
+	return selected_tile != null and state.coins.gte(
+		TilePricing.placement_cost(selected_tile, grid.get_placed_count(selected_tile.id)))
 
 
 # ==================== 通用方块（地皮等） ====================
@@ -1250,20 +1406,65 @@ func _node_at(cell: Vector2i) -> Block:
 ## 当前悬停的节点（矿石或地皮）。跟踪节点而非格子：
 ## 这样当"下方块"悬停时又有矿落在同格，悬停会转移到矿上，下方的块正常退出漂浮。
 var _hovered_node: Block = null
+var _hovered_allow_float := true   # 当前悬停是否允许上浮（放置模式下有矿压着的地块=false）
+
+## 放置预览虚影（半透明）：放置模式下悬停可放格子时显示要放置的地块
+var _ghost: Sprite2D = null
+const GHOST_ALPHA := 0.45
 
 
-func update_hover() -> void:
-	var hovered_cell := world_to_grid(get_global_mouse_position())
-	var node := _node_at(hovered_cell)
-	if node == _hovered_node and hovered_cell == _hovered_cell:
+const INVALID_CELL := Vector2i(999999, 999999)   # update_hover 的"不覆盖"哨兵
+
+
+func update_hover(cell_override := INVALID_CELL) -> void:
+	# 悬停的矿可能刚被挖掉/销毁：先清失效引用，否则后续 == 比较和 is 判断会报
+	# "Left operand of 'is' is a previously freed instance"
+	if _hovered_node != null and not is_instance_valid(_hovered_node):
+		_hovered_node = null
+	var hovered_cell := cell_override if cell_override != INVALID_CELL \
+		else world_to_grid(get_global_mouse_position())
+	_hovered_cell = hovered_cell
+	_update_ghost(hovered_cell)
+	_update_pointer_tint()   # 每帧刷：金币量变化时虚影/指针颜色实时更新
+	var node: Block = null
+	var allow_float := true
+	if selected_tile != null:
+		# 放置模式：只跟地块互动（矿不响应悬浮/挖矿光标）；
+		# 有矿压着的地块只显示描边、不上浮（矿压在上面，浮起来会穿帮）
+		node = tiles_by_cell.get(hovered_cell) as Block
+		allow_float = node != null and not grid.ores.has(hovered_cell)
+	else:
+		node = _node_at(hovered_cell)
+	if node == _hovered_node and allow_float == _hovered_allow_float:
 		return
 	if _hovered_node != null:
 		_hovered_node.set_hovered(false)
-	_hovered_cell = hovered_cell
 	_hovered_node = node
+	_hovered_allow_float = allow_float
 	if _hovered_node != null:
-		_hovered_node.set_hovered(true)
-	_update_pointer_tint()
+		_hovered_node.set_hovered(true, allow_float)
+
+
+## 放置预览虚影：放置模式下、鼠标在可放置格子上（且不在 UI 上）时显示。
+## 每帧从 update_hover 调用，选择切换/放置/删除后悬停格语义变化也走这里刷新。
+## 颜色：绿 = 可放且钱够；红 = 可放但钱不够。位置不可放时虚影隐藏（指针显示橙色）。
+func _update_ghost(cell: Vector2i) -> void:
+	var show := selected_tile != null \
+		and get_viewport().gui_get_hovered_control() == null \
+		and grid.can_place_tile(cell)
+	if show:
+		if _ghost == null:
+			_ghost = Sprite2D.new()
+			_ghost.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST   # 与方块一致：像素风
+			_ghost.scale = Vector2.ONE * Block.TEXTURE_BASE_SCALE      # 与地块方块同缩放
+			below_grid_layer.add_child(_ghost)
+		_ghost.texture = selected_tile.get_texture(0)
+		_ghost.position = grid_to_world(cell)
+		_ghost.z_index = cell.x + cell.y + selected_tile.z_bias   # 与真实地块同一套遮挡序
+		_ghost.modulate = Color(POINTER_PLACE_COLOR, GHOST_ALPHA) if _can_afford_selected() \
+			else Color(POINTER_NO_MONEY_COLOR, GHOST_ALPHA)
+	if _ghost != null:
+		_ghost.visible = show
 
 
 func grid_to_world(cell: Vector2i) -> Vector2:

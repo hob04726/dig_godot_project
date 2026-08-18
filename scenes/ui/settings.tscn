@@ -1,0 +1,254 @@
+[gd_scene format=3 uid="uid://bashdrmceyxcu"]
+
+[ext_resource type="Texture2D" uid="uid://m1ij61qpt62p" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_ALL.png" id="1_8wfqe"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_8wfqe"]
+atlas = ExtResource("1_8wfqe")
+region = Rect2(1, 737, 30, 14)
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_vrkq3"]
+content_margin_left = 30.0
+content_margin_top = 20.0
+content_margin_right = 30.0
+content_margin_bottom = 20.0
+texture = SubResource("AtlasTexture_8wfqe")
+texture_margin_left = 3.0
+texture_margin_top = 3.0
+texture_margin_right = 3.0
+texture_margin_bottom = 5.0
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_aur0f"]
+atlas = ExtResource("1_8wfqe")
+region = Rect2(1, 753, 30, 14)
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_wyyml"]
+content_margin_left = 10.0
+content_margin_right = 10.0
+texture = SubResource("AtlasTexture_aur0f")
+texture_margin_left = 5.0
+texture_margin_top = 5.0
+texture_margin_right = 5.0
+texture_margin_bottom = 7.0
+
+[node name="Settings" type="Control" unique_id=778836457]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Audio" type="Control" parent="." unique_id=1403094947]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="PanelContainer" type="PanelContainer" parent="Audio" unique_id=484743673]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -127.0
+offset_top = -67.5
+offset_right = 127.0
+offset_bottom = 67.5
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxTexture_vrkq3")
+
+[node name="HBoxContainer" type="HBoxContainer" parent="Audio/PanelContainer" unique_id=1580198619]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+theme_override_constants/separation = 30
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Audio/PanelContainer/HBoxContainer" unique_id=147278219]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+theme_override_constants/separation = 20
+
+[node name="Label" type="Label" parent="Audio/PanelContainer/HBoxContainer/VBoxContainer" unique_id=399727386]
+layout_mode = 2
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 5
+text = "主音量"
+
+[node name="Label2" type="Label" parent="Audio/PanelContainer/HBoxContainer/VBoxContainer" unique_id=1434176800]
+layout_mode = 2
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 5
+text = "音乐音量"
+
+[node name="Label3" type="Label" parent="Audio/PanelContainer/HBoxContainer/VBoxContainer" unique_id=409398596]
+layout_mode = 2
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 5
+text = "音效音量"
+
+[node name="VBoxContainer2" type="VBoxContainer" parent="Audio/PanelContainer/HBoxContainer" unique_id=1493926804]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+theme_override_constants/separation = 20
+
+[node name="HSlider" type="HSlider" parent="Audio/PanelContainer/HBoxContainer/VBoxContainer2" unique_id=352128835]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+
+[node name="HSlider2" type="HSlider" parent="Audio/PanelContainer/HBoxContainer/VBoxContainer2" unique_id=776975754]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+
+[node name="HSlider3" type="HSlider" parent="Audio/PanelContainer/HBoxContainer/VBoxContainer2" unique_id=1225675023]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+
+[node name="Game" type="Control" parent="." unique_id=135341909]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Display" type="Control" parent="." unique_id=1137367285]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="PanelContainer" type="PanelContainer" parent="Display" unique_id=927827456]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -127.0
+offset_top = -67.5
+offset_right = 127.0
+offset_bottom = 67.5
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxTexture_vrkq3")
+
+[node name="HBoxContainer" type="HBoxContainer" parent="Display/PanelContainer" unique_id=1955217167]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+theme_override_constants/separation = 30
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Display/PanelContainer/HBoxContainer" unique_id=587788003]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+theme_override_constants/separation = 20
+
+[node name="Label" type="Label" parent="Display/PanelContainer/HBoxContainer/VBoxContainer" unique_id=852021544]
+layout_mode = 2
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 5
+text = "全屏"
+
+[node name="VBoxContainer2" type="VBoxContainer" parent="Display/PanelContainer/HBoxContainer" unique_id=587877194]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+theme_override_constants/separation = 20
+
+[node name="CheckButton" type="CheckButton" parent="Display/PanelContainer/HBoxContainer/VBoxContainer2" unique_id=897132668]
+layout_mode = 2
+
+[node name="Home" type="Control" parent="." unique_id=1001323405]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="PanelContainer" type="PanelContainer" parent="Home" unique_id=657558619]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = 20.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxTexture_vrkq3")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Home/PanelContainer" unique_id=2101254037]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="PanelContainer" type="PanelContainer" parent="Home/PanelContainer/VBoxContainer" unique_id=289703898]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxTexture_wyyml")
+
+[node name="Button" type="Button" parent="Home/PanelContainer/VBoxContainer/PanelContainer" unique_id=1239683937]
+layout_mode = 2
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 8
+text = "Game"
+flat = true
+
+[node name="PanelContainer2" type="PanelContainer" parent="Home/PanelContainer/VBoxContainer" unique_id=1784795521]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxTexture_wyyml")
+
+[node name="Button" type="Button" parent="Home/PanelContainer/VBoxContainer/PanelContainer2" unique_id=716194811]
+layout_mode = 2
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 8
+text = "Audio"
+flat = true
+
+[node name="PanelContainer3" type="PanelContainer" parent="Home/PanelContainer/VBoxContainer" unique_id=1484669961]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxTexture_wyyml")
+
+[node name="Button" type="Button" parent="Home/PanelContainer/VBoxContainer/PanelContainer3" unique_id=856976317]
+layout_mode = 2
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 8
+text = "Display"
+flat = true
+
+[node name="PanelContainer4" type="PanelContainer" parent="Home/PanelContainer/VBoxContainer" unique_id=453957130]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxTexture_wyyml")
+
+[node name="Button" type="Button" parent="Home/PanelContainer/VBoxContainer/PanelContainer4" unique_id=1831390361]
+layout_mode = 2
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 8
+text = "Save"
+flat = true
+
+[node name="PanelContainer5" type="PanelContainer" parent="Home/PanelContainer/VBoxContainer" unique_id=1105935175]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxTexture_wyyml")
+
+[node name="Button" type="Button" parent="Home/PanelContainer/VBoxContainer/PanelContainer5" unique_id=1455890244]
+layout_mode = 2
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 8
+text = "Exit"
+flat = true

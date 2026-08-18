@@ -6,16 +6,16 @@
 [ext_resource type="Script" uid="uid://b7uygkclt70mv" path="res://scripts/camera/camera.gd" id="4_cam"]
 [ext_resource type="PackedScene" path="res://scenes/talent_node.tscn" id="5_node"]
 [ext_resource type="PackedScene" uid="uid://s6l5r6ryl4kd" path="res://scenes/vfx/talent_label.tscn" id="6_tip"]
-[ext_resource type="PackedScene" uid="uid://lq36kecy8mki" path="res://scenes/vfx/impact.tscn" id="10_impact"]
 [ext_resource type="Script" uid="uid://cqg5y06mtbcr2" path="res://scripts/ui/talent_grid_border.gd" id="7_border"]
 [ext_resource type="Texture2D" uid="uid://m1ij61qpt62p" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_ALL.png" id="8_0uvk2"]
 [ext_resource type="Script" uid="uid://bubdnf2uys4m" path="res://scripts/button/back_to_main.gd" id="8_back"]
 [ext_resource type="Texture2D" uid="uid://djp2ui6a0bhup" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_Icons.png" id="9_u0ktv"]
+[ext_resource type="PackedScene" uid="uid://k7jbhrroemoc" path="res://scenes/vfx/unlock.tscn" id="10_unlock"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_uqx37"]
 shader = ExtResource("1_cj7wb")
 shader_parameter/pattern = ExtResource("2_vrifj")
-shader_parameter/pattern_color = Color(0.99999994, 0.9720277, 0.5127706, 1)
+shader_parameter/pattern_color = Color(0.8373512, 0.98479384, 0.9745659, 1)
 shader_parameter/tiling = 100.0
 shader_parameter/speed = Vector2(0.1, 0.5)
 shader_parameter/rotation = 0.0
@@ -39,7 +39,7 @@ region = Rect2(210, 49, 12, 14)
 script = ExtResource("3_talent")
 node_scene = ExtResource("5_node")
 tooltip_prototype = ExtResource("6_tip")
-impact_prototype = ExtResource("10_impact")
+unlock_prototype = ExtResource("10_unlock")
 
 [node name="Background" type="ColorRect" parent="." unique_id=2069637509]
 material = SubResource("ShaderMaterial_uqx37")
@@ -48,6 +48,7 @@ offset_top = -4000.0
 offset_right = 4000.0
 offset_bottom = 4000.0
 mouse_filter = 2
+color = Color(1, 0.8666667, 1, 1)
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=1729625448]
 script = ExtResource("4_cam")
@@ -58,7 +59,7 @@ max_zoom = 2.0
 z_index = 100
 script = ExtResource("7_border")
 max_alpha = 1.0
-border_color = Color(0.5864061, 0.5864061, 0.58640605, 1)
+border_color = Color(3.0936708, 3.0936708, 3.058559, 1)
 border_width = 3.0
 
 [node name="UI" type="CanvasLayer" parent="." unique_id=1528792303]

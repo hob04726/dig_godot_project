@@ -19,6 +19,7 @@ func _init() -> void:
 	state.add_coins(BigNumber.from_int(777))
 	state.increment_ore_mined(&"gold")
 	_check(state.record_ascension_purchase(&"meta_legacy", 10) == true, "升华点充足可购买")
+	state.record_talent_purchase(&"unlock_coal")   # 普通天赋也进存档
 
 	var dirt := load("res://defs/tiles/dirt.tres") as TileDef
 	var gold := load("res://defs/ores/gold.tres") as OreDef
@@ -52,6 +53,7 @@ func _init() -> void:
 	_check(state2.ascension_points_total().gt(BigNumber.zero()), "读档总点数按累计推导")
 	_check(state2.get_ore_mined(&"gold") == 1, "读档 ore_mined 一致")
 	_check(state2.has_ascension(&"meta_legacy"), "读档升华购买一致")
+	_check(state2.has_talent(&"unlock_coal"), "读档普通天赋购买一致")
 	var cells: Array = loaded["grid"]["cells"]
 	_check(cells.size() == 2, "读档格子数一致")
 	var ores: Array = loaded["grid"]["ores"]

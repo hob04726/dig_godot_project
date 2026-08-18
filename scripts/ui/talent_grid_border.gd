@@ -4,6 +4,7 @@ extends Node2D
 ## 天赋网格边框叠加层：随鼠标距离淡出的格子边框（"若隐若现，只在鼠标周围"）。
 ## 由 TalentGrid 创建并作为最后一个子节点挂上——子节点绘制在父节点之上，
 ## 所以边框画在所有天赋节点之上。坐标 = 世界坐标（受相机缩放/平移影响）。
+## 每个格子画成圆角矩形框线（StyleBoxFlat 描边，draw_center=false 只画框）。
 ## 原版是 Control + GridContainer 时代（commit 53672c6），已适配当前 Node2D 世界。
 
 @export var cell_size := Vector2(100, 100)
@@ -13,6 +14,19 @@ extends Node2D
 @export var max_alpha := 0.9           # 鼠标紧贴格子时边框透明度
 @export var border_color := Color(0.8, 0.9, 1.0)
 @export var border_width := 1.0
+@export var corner_radius := 28.0      # 每个格子框线的圆角半径（世界单位）
+
+var _stylebox: StyleBoxFlat = null
+
+
+func _ready() -> void:
+	# 圆角框线用 StyleBoxFlat 画：只描边不填心；颜色在 _draw 里按格子透明度逐格改
+	_stylebox = StyleBoxFlat.new()
+	_stylebox.draw_center = false
+	_stylebox.set_border_width_all(maxi(1, int(border_width)))
+	_stylebox.set_corner_radius_all(maxi(0, int(corner_radius)))
+	_stylebox.border_color = border_color
+	_stylebox.anti_aliasing = true
 
 
 func _process(_delta: float) -> void:
@@ -20,7 +34,7 @@ func _process(_delta: float) -> void:
 
 
 func _draw() -> void:
-	if grid_bounds.size == Vector2i.ZERO:
+	if grid_bounds.size == Vector2i.ZERO or _stylebox == null:
 		return
 	var mouse := get_local_mouse_position()
 	for c in grid_bounds.size.x:
@@ -33,4 +47,32 @@ func _draw() -> void:
 			var t := clampf(1.0 - dist / reveal_radius, 0.0, 1.0)
 			var color := border_color
 			color.a = lerpf(0.0, max_alpha, t)
-			draw_rect(Rect2(center - cell_size * 0.5, cell_size), color, false, border_width)
+			_stylebox.border_color = color   # 立即绘制，逐格改透明度安全
+			draw_style_box(_stylebox, Rect2(center - cell_size * 0.5, cell_size))
+	# 四个圆角框交汇处的空洞：精确填充"四条圆弧围成的曲边区域"本身，
+	# 而不是菱形——填充边界与框线圆弧完全重合，交汇处保持圆润、不出现直边/平角。
+	# 透明度沿用同一套鼠标距离衰减（按顶点到鼠标的距离算）
+	const ARC_STEPS := 8   # 每条圆弧的采样段数
+	for c in grid_bounds.size.x - 1:
+		for r in grid_bounds.size.y - 1:
+			var vertex := Vector2(grid_bounds.position.x + c, grid_bounds.position.y + r) * cell_size + cell_size * 0.5
+			var dist := mouse.distance_to(vertex)
+			if dist > reveal_radius:
+				continue
+			var t := clampf(1.0 - dist / reveal_radius, 0.0, 1.0)
+			var color := border_color
+			color.a = lerpf(0.0, max_alpha, t)
+			var rad := corner_radius
+			# 四条弧的圆心 = 四个相邻格子各自的圆角圆心（顶点 ±rad 处）
+			var arc_defs := [
+				[Vector2(rad, rad), 180.0, 270.0],
+				[Vector2(rad, -rad), 90.0, 180.0],
+				[Vector2(-rad, -rad), 0.0, 90.0],
+				[Vector2(-rad, rad), 270.0, 360.0],
+			]
+			var pts := PackedVector2Array()
+			for arc in arc_defs:
+				for s in ARC_STEPS + 1:
+					var a := deg_to_rad(lerpf(arc[1], arc[2], float(s) / ARC_STEPS))
+					pts.append(vertex + arc[0] + Vector2(cos(a), sin(a)) * rad)
+			draw_colored_polygon(pts, color)
