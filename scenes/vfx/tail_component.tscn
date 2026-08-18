@@ -1,11 +1,11 @@
 [gd_scene format=3 uid="uid://b8jgdge5864y0"]
 
-[ext_resource type="Script" path="res://scripts/ui/tail.gd" id="1_tail"]
+[ext_resource type="Script" uid="uid://587182nale7f" path="res://scripts/ui/tail.gd" id="1_tail"]
 
-[node name="Tail" type="Node2D"]
+[node name="Tail" type="Node2D" unique_id=256452894]
 script = ExtResource("1_tail")
+color = Color(1, 0.8509804, 0.14901961, 0.5019608)
 
-[node name="Line2D" type="Line2D" parent="."]
+[node name="Line2D" type="Line2D" parent="." unique_id=250683330]
 begin_cap_mode = 1
 end_cap_mode = 1
-joint_mode = 0

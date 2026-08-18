@@ -6,7 +6,8 @@ extends PanelContainer
 ## 交互细节：
 ## - 没有任何已解锁地块可放时，整个抽屉隐藏（有解锁后再出现）
 ## - 地皮按钮 flat（无背景框）
-## - 悬停/选中：按钮以底边中心为支点平滑上移 + 微放大（1.05）；选中瞬间"压→冲→落"弹跳（0.94→1.15→1.05），再点一次平滑缩回默认
+## - 悬停/选中：按钮以底边中心为支点平滑微放大（1.05，不上浮）；选中瞬间"压→冲→落"弹跳（0.94→1.15→1.05），再点一次平滑缩回默认
+## - 按钮宽度按贴图宽高比修正（贴图 256×352 → 约 26.2×36），等比显示不压扁
 ## - 选中瞬间在按钮中心随机播放 scenes/vfx/impact.tscn 的一种冲击动画
 
 const OPEN_DURATION := 0.22
@@ -17,12 +18,9 @@ const TILE_IDS: Array[StringName] = [
 	&"spawn", &"push", &"pull",
 ]
 const IMPACT_SCENE := preload("res://scenes/vfx/impact.tscn")
-## 按钮悬停/选中时的目标缩放与上移像素（只大一点点，别喧宾夺主）
+## 按钮悬停/选中时的目标缩放（只大一点点，别喧宾夺主）；不再上浮（用户要求去掉）
 const BTN_ACTIVE_SCALE := 1.05
-const BTN_ACTIVE_LIFT := 6.0
-const BTN_ANIM_TIME := 0.15
-## 缩小（取消选中/离开）的时长：比放大长，和选中弹跳的收回节奏一致
-const BTN_REVERT_TIME := 0.3
+const BTN_ACTIVE_LIFT := 0.0
 ## 选中瞬间的弹跳：先小幅下压再冲过目标、最后回落（squash & stretch，
 ## 悬停已把按钮抬到 1.05，单纯再放大 7% 几乎看不见，所以用"压→冲→落"让点击有反馈）
 const BTN_POP_DIP := 0.94
@@ -30,6 +28,10 @@ const BTN_POP_DIP_TIME := 0.07
 const BTN_POP_SCALE := 1.15
 const BTN_POP_UP_TIME := 0.11
 const BTN_POP_DOWN_TIME := 0.16
+## 悬停/选中的稳态动画：指数跟随速率（帧率无关，方向反转零突变）。
+## 不用 tween——鼠标快速进出时杀 tween 重启会初速度突变，看起来一顿一顿
+const BTN_FOLLOW_GROW := 14.0
+const BTN_FOLLOW_REVERT := 8.0
 ## impact 特效相对天赋树用法缩小一点，适配 36px 按钮
 const IMPACT_SCALE := 0.5
 ## 选中按钮的描边材质（全体按钮共享一份；thickness 单位是贴图像素，
@@ -47,11 +49,17 @@ var _btn_lift: Array[float] = []
 var _btn_base_y: Array[float] = []   # HBox 排版赋予的基准 position.y（排序时重记）
 var _btn_hovered: Array[bool] = []
 var _btn_selected: Array[bool] = []
+var _btn_pop_active: Array[bool] = []   # 选中弹跳进行中（期间指数跟随让位给弹跳 tween）
 var _btn_tweens: Array[Tween] = []
 var _open := false
 var _closed_top := -20.0
 var _closed_bottom := 27.0
 var _tween: Tween
+
+
+## SoundManager autoload 访问器（--script 测试模式下全局标识符不可编译，走节点查找）
+func _sm():
+	return get_node_or_null("/root/SoundManager")
 
 
 func _ready() -> void:
@@ -96,8 +104,15 @@ func _ready() -> void:
 			_btn_base_y.append(0.0)
 			_btn_hovered.append(false)
 			_btn_selected.append(false)
+			_btn_pop_active.append(false)
 			_btn_tweens.append(null)
-			child.flat = true   # 无背景框，选中态靠"保持上移+放大"表达
+			child.flat = true   # 无背景框，选中态靠"保持放大"表达
+			# 地块贴图是 256×352（宽高比 0.727），36×36 方按钮会把它竖向压扁 ~27%——
+			# 按贴图宽高比修正按钮宽度（36×256/352 ≈ 26.2），等比缩放，和世界里的样子一致
+			if child.icon != null:
+				var ts: Vector2 = child.icon.get_size()
+				if ts.y > 0.0:
+					child.custom_minimum_size = Vector2(36.0 * ts.x / ts.y, 36.0)
 			child.pivot_offset = Vector2(child.size.x * 0.5, child.size.y)   # 底边中心为支点
 			child.resized.connect(_on_btn_resized.bind(child))
 			child.pressed.connect(_on_tile_button_pressed.bind(index))
@@ -175,6 +190,7 @@ func _find_hbox(node: Node) -> HBoxContainer:
 
 
 func _on_toggle_pressed() -> void:
+	_sm().play_sfx(&"menu_selection_click")
 	_open = not _open
 	# 关闭抽屉时退出放置模式：不再左键放置/右键删除地块
 	if not _open and _game_manager:
@@ -214,19 +230,35 @@ func _on_selection_changed(tile: TileDef) -> void:
 		var was := _btn_selected[i]
 		_btn_selected[i] = selected
 		_tile_buttons[i].button_pressed = selected
-		_btn_outlines[i].visible = selected   # 选中显示描边，取消隐藏
+		_btn_outlines[i].visible = selected or _btn_hovered[i]   # 选中/悬浮显示描边
 		if selected and not was:
+			_sm().play_sfx(&"below_button_select")   # 选中音效
 			_play_impact(_tile_buttons[i])
 			_pop_button(i)
-		else:
-			_animate_button(i)
 
 
 # ==================== 按钮悬停/选中动效 ====================
 
 func _on_btn_hover(index: int, hovered: bool) -> void:
 	_btn_hovered[index] = hovered
-	_animate_button(index)
+	_btn_outlines[index].visible = hovered or _btn_selected[index]   # 悬浮/选中都显示描边
+
+
+## 每帧指数跟随：悬停/选中的稳态（缩放+上移）向目标平滑逼近。
+## 方向反转时没有 tween 重启的初速度突变，鼠标快速进出也丝滑。
+func _process(delta: float) -> void:
+	for i in _tile_buttons.size():
+		if _btn_pop_active[i]:
+			continue   # 弹跳 tween 正在驱动这个按钮
+		var active: bool = _btn_hovered[i] or _btn_selected[i]
+		var target := Vector2(BTN_ACTIVE_SCALE if active else 1.0, BTN_ACTIVE_LIFT if active else 0.0)
+		var from := Vector2(_btn_scale[i], _btn_lift[i])
+		if from.is_equal_approx(target):
+			if from != target:
+				_apply_button_transform(target, i)   # 吸附端点
+			continue
+		var speed := BTN_FOLLOW_GROW if active else BTN_FOLLOW_REVERT
+		_apply_button_transform(from.lerp(target, 1.0 - exp(-speed * delta)), i)
 
 
 ## 按钮尺寸确定后，把缩放支点固定在底边中心（放大即"向上长"）
@@ -250,32 +282,13 @@ func _on_hbox_sorted() -> void:
 		_btn_base_y[i] = _tile_buttons[i].position.y + _btn_lift[i]
 
 
-## 悬停或选中 → 上移+放大；都否 → 平滑复原
-func _animate_button(index: int) -> void:
-	var active: bool = _btn_hovered[index] or _btn_selected[index]
-	var target := Vector2(BTN_ACTIVE_SCALE if active else 1.0, BTN_ACTIVE_LIFT if active else 0.0)
-	var from := Vector2(_btn_scale[index], _btn_lift[index])
-	if from.is_equal_approx(target):
-		return
-	var old := _btn_tweens[index]
-	if old and old.is_valid():
-		old.kill()
-	# 缩小（取消选中/鼠标离开）用更长时长 + 双向缓动，
-	# 与选中弹跳（0.34s）的节奏匹配，否则 0.15s 一闪就没、显得不平滑
-	var shrinking: bool = target.x < from.x
-	var duration := BTN_REVERT_TIME if shrinking else BTN_ANIM_TIME
-	var t := create_tween()
-	t.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT if shrinking else Tween.EASE_OUT)
-	t.tween_method(_apply_button_transform.bind(index), from, target, duration)
-	_btn_tweens[index] = t
-
-
-## 选中瞬间的弹跳：当前状态 → 小幅下压 → 冲过目标 → 回落保持。
-## 取消选中不走这里，由 _animate_button 平滑缩回。
+## 选中瞬间的弹跳：当前状态 → 小幅下压 → 冲过目标 → 回落保持（一次性 tween）。
+## 取消选中不走这里，由 _process 的指数跟随平滑缩回。
 func _pop_button(index: int) -> void:
 	var old := _btn_tweens[index]
 	if old and old.is_valid():
 		old.kill()
+	_btn_pop_active[index] = true
 	var from := Vector2(_btn_scale[index], _btn_lift[index])
 	var dip := Vector2(BTN_POP_DIP, BTN_ACTIVE_LIFT * 0.5)
 	var peak := Vector2(BTN_POP_SCALE, BTN_ACTIVE_LIFT)
@@ -287,7 +300,12 @@ func _pop_button(index: int) -> void:
 	t.tween_method(_apply_button_transform.bind(index), dip, peak, BTN_POP_UP_TIME)
 	t.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
 	t.tween_method(_apply_button_transform.bind(index), peak, settle, BTN_POP_DOWN_TIME)
+	t.tween_callback(_on_pop_finished.bind(index))
 	_btn_tweens[index] = t
+
+
+func _on_pop_finished(index: int) -> void:
+	_btn_pop_active[index] = false
 
 
 func _apply_button_transform(v: Vector2, index: int) -> void:

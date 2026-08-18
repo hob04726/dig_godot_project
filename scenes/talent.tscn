@@ -9,8 +9,8 @@
 [ext_resource type="Script" uid="uid://cqg5y06mtbcr2" path="res://scripts/ui/talent_grid_border.gd" id="7_border"]
 [ext_resource type="Texture2D" uid="uid://m1ij61qpt62p" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_ALL.png" id="8_0uvk2"]
 [ext_resource type="Script" uid="uid://bubdnf2uys4m" path="res://scripts/button/back_to_main.gd" id="8_back"]
-[ext_resource type="Texture2D" uid="uid://djp2ui6a0bhup" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_Icons.png" id="9_u0ktv"]
 [ext_resource type="PackedScene" uid="uid://k7jbhrroemoc" path="res://scenes/vfx/unlock.tscn" id="10_unlock"]
+[ext_resource type="Script" uid="uid://2ixvkbwgbc3n" path="res://scripts/ui/button_hover_fx.gd" id="11_hoverfx"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_uqx37"]
 shader = ExtResource("1_cj7wb")
@@ -30,10 +30,6 @@ texture_margin_left = 3.0
 texture_margin_top = 4.0
 texture_margin_right = 3.0
 texture_margin_bottom = 3.0
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_q4pbm"]
-atlas = ExtResource("9_u0ktv")
-region = Rect2(210, 49, 12, 14)
 
 [node name="Talent" type="Node2D" unique_id=11944588]
 script = ExtResource("3_talent")
@@ -71,28 +67,31 @@ offset_right = 134.0
 offset_bottom = 73.0
 size_flags_horizontal = 3
 size_flags_vertical = 3
-mouse_filter = 2
 theme_override_styles/panel = SubResource("StyleBoxTexture_mhclv")
 
 [node name="HBoxContainer" type="HBoxContainer" parent="UI/PanelContainer" unique_id=1500970528]
 layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 4
+mouse_filter = 2
 
 [node name="Money" type="RichTextLabel" parent="UI/PanelContainer/HBoxContainer" unique_id=1222663295]
 layout_mode = 2
+clip_contents = false
+mouse_filter = 2
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/outline_size = 5
 text = "Money"
 fit_content = true
 autowrap_mode = 0
 
-[node name="TextureRect" type="TextureRect" parent="UI/PanelContainer/HBoxContainer" unique_id=2098547394]
-layout_mode = 2
-texture = SubResource("AtlasTexture_q4pbm")
-expand_mode = 2
-
 [node name="Back" type="Button" parent="UI/PanelContainer" unique_id=1371171917]
 layout_mode = 2
 flat = true
 script = ExtResource("8_back")
+
+[node name="HoverFX" type="Node" parent="UI/PanelContainer/Back" unique_id=2034726859]
+script = ExtResource("11_hoverfx")
+
+[node name="HoverFX" type="Node" parent="UI/PanelContainer" unique_id=1798169286]
+script = ExtResource("11_hoverfx")

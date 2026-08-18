@@ -38,7 +38,13 @@ var _tooltip_richtext: RichTextLabel = null
 var _grid_overlay: TalentGridBorder = null
 
 
+## SoundManager autoload 访问器（--script 测试模式下全局标识符不可编译，走节点查找）
+func _sm():
+	return get_node_or_null("/root/SoundManager")
+
+
 func _ready() -> void:
+	_sm().play_music(&"normal_talent")   # 天赋场景 BGM
 	if camera == null:
 		camera = get_node_or_null("Camera2D") as Camera2D
 	if gold_label == null:
@@ -60,6 +66,13 @@ func _ready() -> void:
 	_setup_tooltip()
 	_setup_grid_border()
 	_build_tree()
+	# 计数器悬浮提示：鼠标下方跟随显示精确余额（白字黑描边）
+	if gold_label != null:
+		var panel := gold_label.get_parent().get_parent() as PanelContainer
+		if panel != null:
+			ExactValueTooltip.attach(panel, func() -> String:
+				var suffix := "" if tree_mode == TreeMode.ASCENSION else "$"
+				return _current_balance().to_full_string() + suffix)
 
 
 ## 进程内注入 GameState（主场景内嵌天赋场景用）；独立运行由 _ready 从存档自载。
@@ -108,7 +121,8 @@ const TOOLTIP_FOLLOW_SPEED := 15.0   # 说明框平滑跟随速度（1/秒），
 func _process(delta: float) -> void:
 	if camera == null:
 		return
-	var node := _node_at(camera.get_global_mouse_position())
+	# 拖动相机时不做节点悬浮，说明框不追着鼠标跑
+	var node: TalentNode = null if _dragging else _node_at(camera.get_global_mouse_position())
 	if node != _hovered:
 		if _hovered != null:
 			_hovered.set_hovered(false)
@@ -125,13 +139,41 @@ func _process(delta: float) -> void:
 		_hide_tooltip()
 
 
+# ==================== 左键拖动平移相机 ====================
+
+const DRAG_THRESHOLD := 6.0   # 像素：按住左键移动超过这个距离才算拖动（防止点击抖动带跑相机）
+
+var _drag_armed := false      # 左键已在空白处按下，还没过阈值
+var _drag_accum := 0.0        # 按下后累计的移动距离
+var _dragging := false        # 正在拖动相机
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if camera == null:
 		return
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		var node := _node_at(camera.get_global_mouse_position())
-		if node != null:
-			_click(node)
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			var node := _node_at(camera.get_global_mouse_position())
+			if node != null:
+				_click(node)
+			else:
+				# 空白处按下：进入拖动预备（购买/相机二选一，节点上按下不拖相机）
+				_drag_armed = true
+				_drag_accum = 0.0
+		else:
+			_drag_armed = false
+			_dragging = false
+	elif event is InputEventMouseMotion:
+		if event.button_mask & MOUSE_BUTTON_MASK_LEFT == 0:
+			_drag_armed = false   # 兜底：释放事件被 UI 吃掉时也能退出拖动
+			_dragging = false
+			return
+		if _dragging:
+			camera.move_camera(event.relative)
+		elif _drag_armed:
+			_drag_accum += event.relative.length()
+			if _drag_accum > DRAG_THRESHOLD:
+				_dragging = true
 
 
 # ==================== 树构建 ====================
@@ -186,7 +228,11 @@ func _is_revealed(node: TalentNode) -> bool:
 
 
 func _refresh(node: TalentNode, animated := true, just_revealed := false) -> void:
-	if node.state == TalentNode.State.PURCHASED:
+	# 已购买状态以 GameState（_purchased）为准：节点场景是重建的，
+	# 自身 state 不跨档保留，不恢复的话重进界面已购天赋会显示成可再买
+	if _purchased.get(node.talent_id, false):
+		if node.state != TalentNode.State.PURCHASED:
+			node.set_state(TalentNode.State.PURCHASED, animated, just_revealed)
 		return
 	node.set_state(TalentNode.State.AVAILABLE if _can_afford(node) else TalentNode.State.LOCKED, animated, just_revealed)
 
@@ -215,24 +261,30 @@ func _node_at(world_pos: Vector2) -> TalentNode:
 func _click(node: TalentNode) -> void:
 	# "重置·升华"节点：直接升华（无确认）
 	if node.effect_type == "PRESTIGE_RESET":
+		_sm().play_sfx(&"choose_to_reset")
 		_do_ascension()
 		return
 	if node.state == TalentNode.State.PURCHASED:
 		return
 	if not _can_afford(node):
 		print("余额不足：%s 需要 %s %s" % [node.display_name, node.cost.to_compact_string(), node.currency])
+		_sm().play_sfx(&"cant_buy")
 		return
 	if node.currency == "升华点":
 		# 升华点购买：record_ascension_purchase 内部检查余额
 		if not _state.record_ascension_purchase(String(node.talent_id), node.cost.to_int()):
 			print("升华点不足：%s" % node.display_name)
+			_sm().play_sfx(&"cant_buy")
 			return
 	else:
 		# 金币购买：先扣款，再记录
 		if not _state.spend_coins(node.cost):
 			print("金币不足：%s" % node.display_name)
+			_sm().play_sfx(&"cant_buy")
 			return
 		_state.record_talent_purchase(node.talent_id)
+	# 购买成功音效：升华点/金币两种音色
+	_sm().play_sfx(&"sublimation_talent_click" if node.currency == "升华点" else &"talent_click")
 	node.set_state(TalentNode.State.PURCHASED)
 	_purchased[node.talent_id] = true
 	_talent_system.invalidate()
@@ -303,7 +355,8 @@ func persist() -> void:
 func _update_gold_label() -> void:
 	if gold_label:
 		var prefix := "升华点" if tree_mode == TreeMode.ASCENSION else "金币"
-		gold_label.text = "%s：%s" % [prefix, _current_balance().to_compact_string()]
+		var suffix := "" if tree_mode == TreeMode.ASCENSION else "$"
+		gold_label.text = "%s：%s%s" % [prefix, _current_balance().to_compact_string(), suffix]
 
 
 # ==================== 悬浮说明框 ====================

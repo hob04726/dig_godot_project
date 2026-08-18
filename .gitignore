@@ -8,3 +8,4 @@
 # 天赋 CSV 是数据文件（TalentDb 直接读取），不是 Godot 翻译表
 defs/talents/*.translation
 defs/talents/*.csv.import
+release/

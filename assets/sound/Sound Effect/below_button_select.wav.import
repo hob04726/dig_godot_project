@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://c0fsfll8pwwa5"
+path="res://.godot/imported/below_button_select.wav-75f3ba84f96ccaf2fff0e9a0025cb16f.sample"
+
+[deps]
+
+source_file="res://assets/sound/Sound Effect/below_button_select.wav"
+dest_files=["res://.godot/imported/below_button_select.wav-75f3ba84f96ccaf2fff0e9a0025cb16f.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=false
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=0
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=2

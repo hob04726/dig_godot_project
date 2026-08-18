@@ -1,6 +1,8 @@
 [gd_scene format=3 uid="uid://bashdrmceyxcu"]
 
 [ext_resource type="Texture2D" uid="uid://m1ij61qpt62p" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_ALL.png" id="1_8wfqe"]
+[ext_resource type="Script" uid="uid://dkq28j202wwdi" path="res://scripts/ui/settings.gd" id="2_settings"]
+[ext_resource type="Script" path="res://scripts/ui/button_hover_fx.gd" id="3_hoverfx"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_8wfqe"]
 atlas = ExtResource("1_8wfqe")
@@ -37,6 +39,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+script = ExtResource("2_settings")
 
 [node name="Audio" type="Control" parent="." unique_id=1403094947]
 visible = false
@@ -54,10 +57,10 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -127.0
-offset_top = -67.5
-offset_right = 127.0
-offset_bottom = 67.5
+offset_left = -140.0
+offset_top = -140.0
+offset_right = 140.0
+offset_bottom = 140.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxTexture_vrkq3")
@@ -119,6 +122,21 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
+[node name="PanelContainer" type="PanelContainer" parent="Game" unique_id=652128925]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -140.0
+offset_top = -140.0
+offset_right = 140.0
+offset_bottom = 140.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxTexture_vrkq3")
+
 [node name="Display" type="Control" parent="." unique_id=1137367285]
 visible = false
 layout_mode = 1
@@ -135,10 +153,10 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -127.0
-offset_top = -67.5
-offset_right = 127.0
-offset_bottom = 67.5
+offset_left = -140.0
+offset_top = -140.0
+offset_right = 140.0
+offset_bottom = 140.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxTexture_vrkq3")
@@ -186,16 +204,18 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -20.0
-offset_top = -20.0
-offset_right = 20.0
-offset_bottom = 20.0
+offset_left = -140.0
+offset_top = -140.0
+offset_right = 140.0
+offset_bottom = 140.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxTexture_vrkq3")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="Home/PanelContainer" unique_id=2101254037]
 layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
 theme_override_constants/separation = 10
 
 [node name="PanelContainer" type="PanelContainer" parent="Home/PanelContainer/VBoxContainer" unique_id=289703898]
@@ -252,3 +272,46 @@ theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/outline_size = 8
 text = "Exit"
 flat = true
+
+[node name="Back" type="PanelContainer" parent="." unique_id=721135446]
+self_modulate = Color(1, 1, 1, 0)
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -40.0
+offset_bottom = 40.0
+grow_horizontal = 0
+
+[node name="Button" type="Button" parent="Back" unique_id=1712531373]
+layout_mode = 2
+flat = true
+
+[node name="Icon" type="PanelContainer" parent="." unique_id=820868049]
+self_modulate = Color(1, 1, 1, 0)
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="Button" type="Button" parent="Icon" unique_id=1977803982]
+layout_mode = 2
+flat = true
+
+[node name="HoverFX" type="Node" parent="Home/PanelContainer/VBoxContainer/PanelContainer"]
+script = ExtResource("3_hoverfx")
+
+[node name="HoverFX" type="Node" parent="Home/PanelContainer/VBoxContainer/PanelContainer2"]
+script = ExtResource("3_hoverfx")
+
+[node name="HoverFX" type="Node" parent="Home/PanelContainer/VBoxContainer/PanelContainer3"]
+script = ExtResource("3_hoverfx")
+
+[node name="HoverFX" type="Node" parent="Home/PanelContainer/VBoxContainer/PanelContainer4"]
+script = ExtResource("3_hoverfx")
+
+[node name="HoverFX" type="Node" parent="Home/PanelContainer/VBoxContainer/PanelContainer5"]
+script = ExtResource("3_hoverfx")
+
+[node name="HoverFX" type="Node" parent="Back"]
+script = ExtResource("3_hoverfx")
+

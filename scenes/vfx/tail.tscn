@@ -6,6 +6,7 @@
 
 [node name="Tail" type="Node2D" unique_id=1214485323]
 script = ExtResource("1_tail")
+color = Color(1, 0.8509804, 0.14901961, 0.29411766)
 trail_length = 50
 width = 1.0
 max_alpha = 0.8

@@ -8,6 +8,10 @@ func _ready() -> void:
 
 
 func _open() -> void:
+	# SoundManager autoload 走节点查找（--script 测试模式无全局标识符）
+	var sm := get_node_or_null("/root/SoundManager")
+	if sm != null:
+		sm.play_sfx(&"menu_selection_click")
 	var scene := get_tree().current_scene
 	var gm := scene.get_node_or_null("World") as GameManager if scene != null else null
 	if gm != null:

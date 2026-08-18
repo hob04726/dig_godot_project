@@ -6,7 +6,9 @@
 [ext_resource type="PackedScene" uid="uid://b4x7pm8lc4e48" path="res://scenes/block.tscn" id="3_tipki"]
 [ext_resource type="Script" uid="uid://d3clejmktvs1s" path="res://scripts/button/move_back.gd" id="4_jyhfs"]
 [ext_resource type="PackedScene" path="res://scenes/ore_block.tscn" id="4_ore"]
+[ext_resource type="Script" uid="uid://dvuxokkbrkdj0" path="res://scripts/button/open_settings.gd" id="4_settings"]
 [ext_resource type="Script" uid="uid://bsgidl8wmai6e" path="res://scripts/button/open_talent.gd" id="4_talent"]
+[ext_resource type="Script" uid="uid://2ixvkbwgbc3n" path="res://scripts/ui/button_hover_fx.gd" id="5_hoverfx"]
 [ext_resource type="Texture2D" uid="uid://djp2ui6a0bhup" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_Icons.png" id="5_tbgi4"]
 [ext_resource type="Texture2D" uid="uid://cl3g57ofkwtlc" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_Selectors.png" id="5_tipki"]
 [ext_resource type="PackedScene" uid="uid://byh7nv54qydf6" path="res://scenes/vfx/progress_bar.tscn" id="6_bar"]
@@ -21,7 +23,6 @@
 [ext_resource type="Texture2D" uid="uid://m1ij61qpt62p" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_ALL.png" id="12_eb6dy"]
 [ext_resource type="Texture2D" uid="uid://dy7ixmam67yyt" path="res://assets/blocks/png/ground_dirt.png" id="13_trceg"]
 [ext_resource type="Texture2D" uid="uid://cmixn1ftx5d5i" path="res://assets/blocks/png/ground_grass.png" id="14_jkv2x"]
-[ext_resource type="Shader" uid="uid://rd7sb0wag4l4" path="res://scripts/shaders/balatro_original_fire.gdshader" id="15_2f3dj"]
 [ext_resource type="Texture2D" uid="uid://b0if7cynotr70" path="res://assets/blocks/png/ground_stone.png" id="15_jbj1t"]
 [ext_resource type="Shader" uid="uid://by6cxbvaxscy2" path="res://scripts/shaders/animated_pattern_background.gdshader" id="bg_shader"]
 [ext_resource type="Texture2D" uid="uid://cvxq7vkw8irks" path="res://assets/blocks/png/ground_fire.png" id="tex_fire"]
@@ -32,15 +33,6 @@
 [ext_resource type="Texture2D" uid="uid://cr2tmxp8wlcgd" path="res://assets/blocks/png/ground_upgrade.png" id="tex_upgrade"]
 [ext_resource type="Texture2D" uid="uid://cratdtqxnbu5e" path="res://assets/blocks/png/ground_volcano.png" id="tex_volcano"]
 [ext_resource type="Texture2D" uid="uid://dxio3fljv41t6" path="res://assets/blocks/png/ground_water.png" id="tex_water"]
-
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_vxglm"]
-shader = ExtResource("15_2f3dj")
-shader_parameter/amount = 0.0
-shader_parameter/texture_details = Vector4(0, 0, 1, 1)
-shader_parameter/image_details = Vector2(1, 1)
-shader_parameter/colour_1 = Color(1, 0.72, 0.2, 1)
-shader_parameter/colour_2 = Color(1, 0.18, 0.06, 1)
-shader_parameter/id = 0.0
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_85g3d"]
 atlas = ExtResource("5_tipki")
@@ -101,10 +93,6 @@ texture_margin_top = 4.0
 texture_margin_right = 3.0
 texture_margin_bottom = 3.0
 
-[sub_resource type="AtlasTexture" id="AtlasTexture_bjqgx"]
-atlas = ExtResource("5_tbgi4")
-region = Rect2(210, 49, 12, 14)
-
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_lfsot"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_wyyml"]
@@ -138,7 +126,6 @@ ore_prototype = ExtResource("4_ore")
 above_grid_layer = NodePath("AboveGridLayer")
 below_grid_layer = NodePath("BelowGridLayer")
 money_label = NodePath("../CanvasLayer/PanelContainer/HBoxContainer/Money")
-money_fire_material = SubResource("ShaderMaterial_vxglm")
 explosion_prototype = ExtResource("6_exp")
 coin_prototype = ExtResource("6_coin")
 progress_bar_prototype = ExtResource("6_bar")
@@ -205,6 +192,9 @@ expand_icon = true
 script = ExtResource("4_jyhfs")
 camera = NodePath("../../../World/Camera2D")
 
+[node name="HoverFX" type="Node" parent="CanvasLayer/HUD/Button" unique_id=651654446]
+script = ExtResource("5_hoverfx")
+
 [node name="Setting" type="Button" parent="CanvasLayer/HUD" unique_id=1795523629]
 layout_mode = 1
 anchors_preset = 1
@@ -219,13 +209,10 @@ icon = SubResource("AtlasTexture_xljfi")
 flat = true
 icon_alignment = 1
 expand_icon = true
+script = ExtResource("4_settings")
 
-[node name="MoneyFire" type="ColorRect" parent="CanvasLayer" unique_id=1503619970]
-material = SubResource("ShaderMaterial_vxglm")
-offset_left = 32.0
-offset_right = 150.0
-offset_bottom = 88.0
-mouse_filter = 2
+[node name="HoverFX" type="Node" parent="CanvasLayer/HUD/Setting" unique_id=977338692]
+script = ExtResource("5_hoverfx")
 
 [node name="PanelContainer" type="PanelContainer" parent="CanvasLayer" unique_id=977089570]
 offset_left = 48.0
@@ -234,31 +221,35 @@ offset_right = 134.0
 offset_bottom = 73.0
 size_flags_horizontal = 3
 size_flags_vertical = 3
-mouse_filter = 2
 theme_override_styles/panel = SubResource("StyleBoxTexture_u1l1p")
 
 [node name="HBoxContainer" type="HBoxContainer" parent="CanvasLayer/PanelContainer" unique_id=95234273]
 layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 4
+mouse_filter = 2
 
 [node name="Money" type="RichTextLabel" parent="CanvasLayer/PanelContainer/HBoxContainer" unique_id=994013188]
 layout_mode = 2
+clip_contents = false
+mouse_filter = 2
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/outline_size = 5
 text = "Money"
 fit_content = true
 autowrap_mode = 0
-
-[node name="TextureRect" type="TextureRect" parent="CanvasLayer/PanelContainer/HBoxContainer" unique_id=17277321]
-layout_mode = 2
-texture = SubResource("AtlasTexture_bjqgx")
-expand_mode = 2
+horizontal_alignment = 1
 
 [node name="Talent" type="Button" parent="CanvasLayer/PanelContainer" unique_id=2002355869]
 layout_mode = 2
 flat = true
 script = ExtResource("4_talent")
+
+[node name="HoverFX" type="Node" parent="CanvasLayer/PanelContainer/Talent" unique_id=1050144916]
+script = ExtResource("5_hoverfx")
+
+[node name="HoverFX" type="Node" parent="CanvasLayer/PanelContainer" unique_id=1818937189]
+script = ExtResource("5_hoverfx")
 
 [node name="BlowContainer" type="PanelContainer" parent="CanvasLayer" unique_id=1695655509]
 anchors_preset = 12
@@ -294,6 +285,9 @@ size_flags_vertical = 4
 icon = SubResource("AtlasTexture_8jovo")
 flat = true
 icon_alignment = 1
+
+[node name="HoverFX" type="Node" parent="CanvasLayer/BlowContainer/VBoxContainer/Button" unique_id=127312931]
+script = ExtResource("5_hoverfx")
 
 [node name="PanelContainer" type="PanelContainer" parent="CanvasLayer/BlowContainer/VBoxContainer" unique_id=385603935]
 layout_mode = 2

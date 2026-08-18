@@ -12,6 +12,7 @@ const FADE_TIME := 0.5
 const DISPLAY_COLOR := Color.WHITE   # 盖上时的底色（白色过场）
 
 static var _instance: SceneTransition = null
+static var _used := false   # 进程内是否已发生过转场（区分"游戏首次启动"与"从别的场景切回来"）
 
 ## 遮罩贴图：灰度图（亮处显示 display_texture、暗处透明）。
 ## 在 scenes/ui/scene_transition.tscn 的 Inspector 里选；留空则用程序生成的径向渐变。
@@ -37,7 +38,19 @@ static func get_instance() -> SceneTransition:
 
 ## 对外入口：播放转场并切换到 scene_path
 static func play_to(scene_path: String) -> void:
+	_used = true
 	get_instance().play_transition(scene_path)
+
+
+## 对外入口：游戏首次启动时的开场揭开（主场景 _ready 调用）。
+## 从天赋界面等经 play_to 切回主场景时，play_to 自己已经播过揭开，这里跳过。
+static func play_entry() -> void:
+	if _used:
+		return
+	_used = true
+	# 主场景 _ready 期间 root 还在装子节点，直接 add_child 会失败 → 推迟到帧末
+	# （deferred 在首帧绘制前执行，不会闪出未覆盖的画面）
+	Callable(func() -> void: get_instance().play_reveal()).call_deferred()
 
 
 func _ready() -> void:
@@ -78,6 +91,22 @@ func play_transition(scene_path: String) -> void:
 	var t2 := create_tween()
 	t2.tween_method(_set_cutoff, 0.0, 1.0, FADE_TIME)      # 揭开（虹膜打开）
 	await t2.finished
+	_rect.visible = false
+	_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_busy = false
+
+
+## 只播"揭开"：初始全盖住（cutoff 0）→ 扫到 1 露出场景。用于游戏首次启动开场。
+func play_reveal() -> void:
+	if _busy or _material == null or _rect == null:
+		return
+	_busy = true
+	_rect.visible = true
+	_rect.mouse_filter = Control.MOUSE_FILTER_STOP   # 开场期间挡住点击
+	_set_cutoff(0.0)
+	var t := create_tween()
+	t.tween_method(_set_cutoff, 0.0, 1.0, FADE_TIME)   # 揭开（虹膜打开）
+	await t.finished
 	_rect.visible = false
 	_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_busy = false

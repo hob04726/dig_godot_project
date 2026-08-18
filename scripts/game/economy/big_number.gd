@@ -342,8 +342,24 @@ func to_compact_string() -> String:
 	return sign_text + body + COMPACT_SUFFIXES[unit]
 
 
-# ==================== 序列化 ====================
+## 完整数值显示（悬浮提示用）：|v| < 2^53 且为整数 → 千分位整串（如 12,345,678，精确）；
+## 超出精确整数范围 → 科学计数（如 1.2345e+22）
+func to_full_string() -> String:
+	if is_zero():
+		return "0"
+	var sign_text := "-" if is_negative() else ""
+	var v := absolute().to_float()
+	if is_finite(v) and v < float(EXACT_INT_LIMIT) and v == floorf(v):
+		var s := str(int(v))
+		var out := ""
+		while s.length() > 3:
+			out = "," + s.right(3) + out
+			s = s.left(s.length() - 3)
+		return sign_text + s + out
+	return sign_text + "%.4fe+%d" % [absolute().mantissa, exponent]
 
+
+# ==================== 序列化 ====================
 ## 可 round-trip 的紧凑表示（用于存档；不重写 Object.to_string）：
 ##   - 绝对值 < 2^53 且为整数 → 整数串（精确）
 ##   - 否则 → mantissa + "e" + exponent（str(mantissa) 用最短往返表示，科学形式解析回同一 double）

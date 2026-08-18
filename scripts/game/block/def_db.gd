@@ -26,10 +26,16 @@ func load_dir(path: String) -> void:
 
 	dir.list_dir_begin()
 	var file_name := dir.get_next()
+	var seen: Dictionary = {}
 	while file_name != "":
-		if not dir.current_is_dir() and file_name.get_extension() == "tres":
-			var full_path := path.path_join(file_name)
-			_register(load(full_path), full_path)
+		if not dir.current_is_dir():
+			# 导出包里文本资源被转成二进制，目录里只剩 xxx.tres.remap 桩，
+			# 剥掉 .remap 后缀再按 tres 处理（load 会自动走重映射）
+			var res_name := file_name.trim_suffix(".remap")
+			if res_name.get_extension() == "tres" and not seen.has(res_name):
+				seen[res_name] = true
+				var full_path := path.path_join(res_name)
+				_register(load(full_path), full_path)
 		file_name = dir.get_next()
 	dir.list_dir_end()
 

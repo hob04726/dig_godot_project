@@ -36,18 +36,46 @@ var _mine_rng := RandomNumberGenerator.new()
 ## 存档 I/O（内容由本组合根组装）
 var _save_manager := SaveManager.new()
 var _save_dirty := false
-## 破纪录火焰：滚动最高值 + 一分钟窗口（会话级，不存档）
-var _best_coins := BigNumber.zero()
-var _last_beat_time := -100.0
-var _fire_tween: Tween
+## 冒火条件：四个屏幕边各自独立的 10 秒滚动窗口收入分档（会话级，不存档）——
+##   >1e3 红火 / >1e6 蓝火 / >1e13 紫火 / >1e20 黑火 / >1e28 呼吸变色火
+const FIRE_WINDOW := 10.0
+const FIRE_SHADER := preload("res://scripts/shaders/edge_fire.gdshader")
+# 落出屏幕的矿值分档粒子贴图（>0 / >10 / >100 / >1e3 / >1e4 / >1e7）
+const COIN_TEX_BRICK_ORANGE := preload("res://assets/VfxMix/particle/brick_orange.png")
+const COIN_TEX_BRICK_DARK := preload("res://assets/VfxMix/particle/brick_dark.png")
+const COIN_TEX_BRICK_GRAY := preload("res://assets/VfxMix/particle/brick_gray.png")
+const COIN_TEX_BRONZE := preload("res://assets/VfxMix/particle/coin_bronze.png")
+const COIN_TEX_SILVER := preload("res://assets/VfxMix/particle/coin_silver.png")
+const COIN_TEX_GOLD := preload("res://assets/VfxMix/particle/coin_gold.png")
+const EDGE_NAMES: Array[StringName] = [&"bottom", &"top", &"left", &"right"]
+const EDGE_FIRE_THICKNESS := 60.0    # 火焰条厚度（逻辑像素）
+var _edge_fires: Dictionary = {}     # edge → {rect: ColorRect, mat: ShaderMaterial}
+var _income_logs: Dictionary = {}    # edge → Array[{t: 秒, v: BigNumber}]，按时间排序
+var _fire_tiers: Dictionary = {}     # edge → int（0 = 无火）
+var _fire_tweens: Dictionary = {}    # edge → Tween
 var _money_dance_tween: Tween
-const RECORD_WINDOW := 60.0   # 一分钟：没在这段时间内破纪录就把纪录滚到当前值
+## 档位表（threshold 用 float 构造即可，阈值比较不要求精确）
+static var FIRE_TIERS: Array = [
+	{"threshold": BigNumber.from_float(1e3),
+		"c1": Color(1.0, 0.72, 0.2), "c2": Color(1.0, 0.18, 0.06)},       # 红火
+	{"threshold": BigNumber.from_float(1e6),
+		"c1": Color(0.55, 0.85, 1.0), "c2": Color(0.15, 0.3, 1.0)},       # 蓝火
+	{"threshold": BigNumber.from_float(1e13),
+		"c1": Color(0.9, 0.55, 1.0), "c2": Color(0.55, 0.15, 0.95)},      # 紫火
+	{"threshold": BigNumber.from_float(1e20),
+		"c1": Color(0.35, 0.32, 0.4), "c2": Color(0.03, 0.02, 0.08)},     # 黑火
+	{"threshold": BigNumber.from_float(1e28),
+		"c1": Color.WHITE, "c2": Color.WHITE},                            # 呼吸火（颜色每帧由 _update_fire_breath 循环）
+]
 
 ## 稿子伤害（PickaxeData 阶段再替换成资源）
 @export var pickaxe_damage := 10
 
-## 自动落矿参数
+## 自动落矿参数：每个空闲格子各自的落矿倒计时（秒），挖掉后约这么久重新落矿
 @export var spawn_interval := 2.0
+## 落矿间隔的随机抖动（±比例）：0.2 → 实际间隔在 0.8~1.2× 之间，
+## 各格速度大体一致但又有点快慢差异，避免整齐划一的节拍器感
+@export var spawn_interval_jitter := 0.2
 ## 矿石上限；<= 0 表示填满所有格子（动态取 grid.cells.size()）
 @export var max_ores := 0
 
@@ -63,8 +91,6 @@ const RECORD_WINDOW := 60.0   # 一分钟：没在这段时间内破纪录就把
 
 ## 金币 HUD（main.tscn 里的 RichTextLabel）
 @export var money_label: RichTextLabel = null
-## 金币计数器破纪录时的火焰特效材质（balatro 火焰 shader，amount 控制强度）
-@export var money_fire_material: ShaderMaterial = null
 
 ## 矿石破坏特效原型：爆炸序列帧 / 金币粒子 / 挖矿进度条 / 伤害跳数
 @export var explosion_prototype: PackedScene = null
@@ -82,9 +108,11 @@ const RECORD_WINDOW := 60.0   # 一分钟：没在这段时间内破纪录就把
 ## 矿石飞出时的旋转角速度区间（度/秒，随机正负方向）
 @export var ore_spin_min := 140.0
 @export var ore_spin_max := 360.0
-## 爆炸大小：基础缩放 + 每点最后一击伤害附加的缩放
-@export var explosion_scale_base := 0.3
-@export var explosion_scale_per_damage := 0.015
+## 爆炸大小：基础缩放 + 随最后一击伤害的饱和成长（见 _explosion_scale）
+@export var explosion_scale_base := 0.2
+## 成长封顶（渐近值）和速率：log10 驱动的饱和曲线，后期高伤害不会炸满屏
+@export var explosion_scale_growth_cap := 0.35
+@export var explosion_scale_growth_rate := 0.4
 
 ## 金币飞向计数板：边缘跳数 + 拖尾参数
 const COIN_NUM_SPEED := 220.0         # 边缘跳数飞向屏幕中心的速度
@@ -107,17 +135,17 @@ var _coin_flights: Array = []
 ## 金币飞行所在层：主 UI CanvasLayer（layer 1，屏幕空间，天然在世界之上）。
 ## 飞行体 z_index 取负 → 画在主 UI 控件（计数板/HUD）之下 → 汇聚到计数板后面消失。
 var _coin_flight_layer: CanvasLayer = null
-## 待拖尾消失后再触发的金币跳数：飞行结束后才"震动 + 上涨"
-var _pending_coin := false
-var _pending_coin_duration := 0.0
+## 金币数字滚动：显示值每帧指数追赶真实总额（_chase_money_display），
+## 不再等金币飞行结束——持续收入时也一直滚动，永不冻结
+const MONEY_ROLL_SPEED := 3.5        # 指数追赶速率（约 1 秒追掉 97% 差额）
+var _money_rolling := false          # 正在滚动（差额未闭合）
 ## 当前正在挖的矿上方的进度条
 var _mining_bar: Node2D = null
 var _bar_tween: Tween
 ## 等待粒子全部消失后再释放的金币粒子（{node, particles, wait}）
 var _coin_cleanups: Array = []
-## 左上角显示的金币值（跳数动画期间与 state.coins 不同步）
+## 左上角显示的金币值（滚动期间与 state.coins 不同步）
 var _displayed_coins := BigNumber.zero()
-var _coin_tween: Tween
 
 @onready var _camera: Camera2D = get_node_or_null("Camera2D") as Camera2D
 
@@ -138,11 +166,19 @@ var _cursor_wiggle_wait := 1.2     # 距下次摇晃的等待（随机化）
 const CURSOR_WIGGLE_ANGLE := 20.0
 const CURSOR_WIGGLE_STEP := 0.07   # 每个姿态停留时长
 
-var _spawn_timer: Timer
+var _cell_spawn_timers: Dictionary = {}   # Vector2i → 剩余秒：每个空闲格子独立的落矿倒计时
 var _autosave_timer: Timer
 
 
+## SoundManager autoload 访问器：--script 测试模式下 autoload 全局标识符无法编译，
+## 统一走节点查找（两种运行模式都安全）
+func _sm():
+	return get_node_or_null("/root/SoundManager")
+
+
 func _ready() -> void:
+	# 游戏首次启动的开场揭开转场（与主界面↔天赋界面同款；从天赋切回时 play_to 已播过，自动跳过）
+	SceneTransition.play_entry()
 	# 存档脏标记先连好：初始网格构建（_load_or_init）也要标脏，否则纯新档不会自动存档
 	state.changed.connect(_mark_save_dirty)
 	grid.tile_changed.connect(_on_grid_changed)
@@ -151,6 +187,8 @@ func _ready() -> void:
 	_talent_db.load_all()
 	_talent_system = TalentSystem.new(state, _talent_db)
 	_mine_rng.randomize()
+	# 主场景 BGM：main1/main2 随机挑一首循环
+	_sm().play_music(&"main1" if randi() % 2 == 0 else &"main2")
 	_load_or_init()   # 有存档 → 恢复；无存档 → 新游戏初始化
 	# 天赋地块行为 override（TILE_BEHAVIOR_UP）推给网格
 	grid.set_tile_overrides(_talent_system.get_tile_behavior_overrides())
@@ -160,11 +198,7 @@ func _ready() -> void:
 	grid.ore_moved.connect(_on_ore_moved)
 	grid.tile_request_spawn.connect(_on_tile_request_spawn)
 
-	_spawn_timer = Timer.new()
-	_spawn_timer.wait_time = spawn_interval
-	_spawn_timer.timeout.connect(_on_spawn_tick)
-	add_child(_spawn_timer)
-	_spawn_timer.start()
+	# 落矿不再是全局节拍器：每个空闲格子独立倒计时，见 _update_cell_spawn
 
 	# 自动存档（防御：编辑器停跑/崩溃不会触发退出通知，靠定时兜底）
 	_autosave_timer = Timer.new()
@@ -180,12 +214,6 @@ func _ready() -> void:
 		_mining_bar.z_index = 4000   # 画在所有地块之上
 		_mining_bar.visible = false
 
-	# 火焰画在单独的矩形特效层；单图使用归一化 UV 参数。
-	# amount=0 时只让特效层透明，不会再把金币面板本身变透明。
-	if money_fire_material != null:
-		money_fire_material.set_shader_parameter("image_details", Vector2.ONE)
-		money_fire_material.set_shader_parameter("texture_details", Vector4(0, 0, 1, 1))
-
 	# RichTextLabel 是 HBoxContainer 的子节点，用视觉偏移做动画才不会被布局覆盖。
 	if money_label != null:
 		money_label.offset_transform_enabled = true
@@ -196,6 +224,13 @@ func _ready() -> void:
 	_update_money_label()
 	_setup_cursors()
 	_setup_coin_flight_layer()
+	_setup_edge_fires()
+	# 计数器悬浮提示：鼠标下方跟随显示精确金币数（白字黑描边）
+	if money_label != null:
+		var panel := money_label.get_parent().get_parent() as PanelContainer
+		if panel != null:
+			ExactValueTooltip.attach(panel,
+				func() -> String: return state.coins.to_full_string() + "$")
 	initialized.emit()   # _ready 完成：依赖方（抽屉等）此时可安全查询解锁状态
 
 
@@ -253,11 +288,12 @@ func _process(delta: float) -> void:
 	_batch_place_if_held()
 	_batch_remove_if_held()
 	grid.tick(delta)
+	_update_cell_spawn(delta)
 	_update_flying_ores(delta)
 	_update_jump_numbers(delta)
 	_update_coin_flights(delta)
 	_update_coin_cleanups(delta)
-	_update_fire()
+	_update_fire_breath()
 
 
 ## 悬停中的矿（失效引用安全）：矿被挖掉后 _hovered_node 会短暂指向已释放实例
@@ -390,13 +426,32 @@ func grid_init() -> void:
 
 # ==================== 落矿 ====================
 
-func _on_spawn_tick() -> void:
-	if grid.ores.size() >= _effective_max_ores():
-		return
-	var free_cells := _free_cells()
-	if free_cells.is_empty():
-		return
-	_spawn_ore_on(free_cells.pick_random())
+## 每格独立落矿倒计时：空闲格子各自计时，到期在自己这格落矿。
+## 新空格/挖掉矿的格子登记 spawn_interval×(1±jitter) 秒的随机间隔（默认 ±20%），
+## 各格落矿速度大体一致但有细微快慢差异。被占用/不再合法的格子清掉计时器。
+func _update_cell_spawn(delta: float) -> void:
+	var free := {}
+	for cell: Vector2i in grid.cells.keys():
+		if grid.ores.has(cell):
+			continue
+		var tile := grid.get_tile_at(cell)
+		if tile == null or tile.behavior == TileDef.Behavior.VOLCANO:
+			continue   # 空格无地皮不落矿；火山不能落矿（水格允许，矿会沉没返还 10%）
+		free[cell] = true
+	for cell in _cell_spawn_timers.keys():
+		if not free.has(cell):
+			_cell_spawn_timers.erase(cell)
+	for cell: Vector2i in free:
+		if not _cell_spawn_timers.has(cell):
+			_cell_spawn_timers[cell] = spawn_interval * randf_range(
+				1.0 - spawn_interval_jitter, 1.0 + spawn_interval_jitter)
+	for cell: Vector2i in free:
+		if grid.ores.size() >= _effective_max_ores():
+			return
+		_cell_spawn_timers[cell] -= delta
+		if _cell_spawn_timers[cell] <= 0.0:
+			_spawn_ore_on(cell)
+			_cell_spawn_timers.erase(cell)   # 已占用；下次腾空时重新登记随机相位
 
 
 ## 矿石上限：max_ores <= 0 时填满所有格子
@@ -475,11 +530,13 @@ func _mine_at(cell: Vector2i) -> void:
 		pickaxe_damage, grid.effective_damage_multiplier(cell), _mine_rng)
 	var damage: int = hit["damage"]
 	ore.hit()
+	_sm().play_sfx(&"dig", randf_range(0.95, 1.1))   # 每镐一声，音高随机防机枪感
 	# 伤害跳数（暴击彩色晃动）
 	_spawn_damage_number(ore.global_position + Vector2(0, -16), damage, hit["crit"])
 	if ore.take_damage(damage):
 		ore.kill_damage = damage   # 最后一击伤害 → 决定飞出力度
 		state.increment_ore_mined(ore.get_def().id)   # 玩家挖死才计开采
+		_sm().play_sfx(&"broke_a_ore")
 		grid.remove_ore(cell)  # 发 ore_removed → 结算金币 + 破坏特效
 	else:
 		_update_mining_bar(ore)   # 还活着：更新挖矿进度条
@@ -624,9 +681,9 @@ func _play_explosion(world_pos: Vector2, ore: OreBlock = null) -> void:
 	var explosion := explosion_prototype.instantiate() as Node2D
 	above_grid_layer.add_child(explosion)
 	explosion.global_position = world_pos
-	# 爆炸大小随最后一击伤害：伤害越高炸得越大
+	# 爆炸大小随最后一击伤害：伤害越高炸得越大（饱和成长，见 _explosion_scale）
 	var damage := ore.kill_damage if ore != null else 0
-	var s := explosion_scale_base + damage * explosion_scale_per_damage
+	var s := _explosion_scale(damage)
 	explosion.scale = Vector2(s, s)
 	explosion.z_index = 4000              # 画在所有方块之上
 	var anim := explosion.get_node_or_null("AnimatedSprite2D") as AnimatedSprite2D
@@ -644,6 +701,14 @@ func _play_explosion(world_pos: Vector2, ore: OreBlock = null) -> void:
 	anim.animation = pool[randi() % pool.size()]
 	anim.play()
 	anim.animation_finished.connect(func() -> void: explosion.queue_free())
+
+
+## 爆炸缩放：base + cap·(1 − e^(−rate·log10(伤害)))——
+## 基础 0.2 起步，伤害 10≈+0.12、100≈+0.19、1e5≈+0.30，渐近 0.55 封顶；
+## 对数饱和成长：后期伤害差几个数量级，爆炸大小只差一点点（线性成长会炸满屏）
+func _explosion_scale(damage: int) -> float:
+	var logv := log(maxf(float(damage), 1.0)) * 0.4343   # log10
+	return explosion_scale_base + explosion_scale_growth_cap * (1.0 - exp(-explosion_scale_growth_rate * logv))
 
 
 ## 按矿物类型挑动画池：水晶类 → break_*，其他 → explosion*
@@ -748,7 +813,18 @@ func _update_flying_ores(delta: float) -> void:
 ## 同时产生"金币飞向计数板"效果：边缘跳数 + 若干拖尾（见 _spawn_coin_flight）。
 func _play_coin_and_count(pos: Vector2, gained: BigNumber, dir := Vector2.UP) -> void:
 	var duration := _coin_duration(gained)
-	var spawned := _spawn_coin_flight(pos, gained, dir)
+	_sm().play_sfx(&"coin_particle")   # 金币爆发
+	_spawn_coin_flight(pos, gained, dir)
+	# 出屏方向 → 屏幕边：价值记进该边的 10 秒窗口（火焰分档用）
+	# dir 是"朝屏幕内"的方向：UP=从底边飞出，DOWN=顶边，LEFT=右边，RIGHT=左边
+	var edge := &"bottom"
+	if dir == Vector2.DOWN:
+		edge = &"top"
+	elif dir == Vector2.LEFT:
+		edge = &"right"
+	elif dir == Vector2.RIGHT:
+		edge = &"left"
+	_record_income(gained, edge)
 	if coin_prototype != null:
 		var coin := coin_prototype.instantiate() as Node2D
 		above_grid_layer.add_child(coin)
@@ -762,22 +838,24 @@ func _play_coin_and_count(pos: Vector2, gained: BigNumber, dir := Vector2.UP) ->
 			# 复制材质改参数（避免污染共享资源）：
 			# 粒子大小由材质的 scale_min/max 控制（不是节点缩放），
 			# direction 让侧面出屏时朝屏幕内喷。
+			# 大小和初速度都随矿值放大（见 _coin_size_mul / _coin_velocity_mul）。
+			var size_mul := _coin_size_mul(gained)
+			var vel_mul := _coin_velocity_mul(gained)
 			var mat := particles.process_material as ParticleProcessMaterial
 			if mat:
 				mat = mat.duplicate() as ParticleProcessMaterial
 				mat.direction = Vector3(dir.x, dir.y, 0)
-				mat.scale_min = coin_effect_scale
-				mat.scale_max = coin_effect_scale
+				mat.scale_min = coin_effect_scale * size_mul
+				mat.scale_max = coin_effect_scale * size_mul
+				mat.initial_velocity_min *= vel_mul
+				mat.initial_velocity_max *= vel_mul
 				particles.process_material = mat
+			particles.texture = _coin_particle_texture(gained)   # 贴图按矿值分档
 			particles.restart()
 		# 等粒子全部消失再释放，避免动画被截断（戛然而止）
 		_coin_cleanups.append({"node": coin, "particles": particles, "wait": duration + 1.0})
-	if spawned:
-		# 数字等拖尾消失后再震动上涨：把跳数挂到金币飞行完成时触发
-		_pending_coin = true
-		_pending_coin_duration = duration
-	else:
-		_count_up_coins(duration)   # 无飞行（如金币 0）立即上涨
+	# 数字滚动由 _chase_money_display 每帧自动追赶，这里只播震动（收益越大晃得越夸张）
+	_play_money_dance(clampf(1.0 + log(maxf(gained.to_float(), 1.0)) * 0.4343 * 0.15, 1.0, 1.8))
 
 
 # ==================== 金币飞向计数板 ====================
@@ -835,7 +913,7 @@ func _spawn_coin_trail(pos: Vector2, dir: Vector2, counter: Vector2) -> void:
 		return
 	var trail := tail_prototype.instantiate() as Node2D
 	trail.width = 3.0
-	trail.max_alpha = 0.8
+	trail.max_alpha = 0.1
 	trail.trail_length = 50
 	trail.line_z_index = -5   # 线画在主 UI 控件（计数板）之下
 	_coin_flight_layer.add_child(trail)
@@ -861,10 +939,24 @@ func _coin_trail_count(gained: BigNumber) -> int:
 ## 每帧处理金币飞行体；全部消失后触发挂起的金币跳数（先震动再上涨）
 func _update_coin_flights(delta: float) -> void:
 	_process_coin_flights(delta)
-	# 拖尾全部消失后，触发挂起的金币跳数（_count_up_coins 内先 _play_money_dance 震动）
-	if _coin_flights.is_empty() and _pending_coin:
-		_pending_coin = false
-		_count_up_coins(_pending_coin_duration)
+	_chase_money_display(delta)
+
+
+## 金币数字持续滚动：显示值每帧沿对数空间指数追赶真实总额，
+## 接近后（差额 < 0.2% 或 < 1）直接吸附——持续收入时数字一直滚，绝不冻结。
+func _chase_money_display(delta: float) -> void:
+	if state == null or money_label == null:
+		return
+	if _displayed_coins.eq(state.coins):
+		_money_rolling = false
+		return
+	_money_rolling = true
+	var t := clampf(delta * MONEY_ROLL_SPEED, 0.0, 1.0)
+	var next := BigNumber.lerp(_displayed_coins, state.coins, t)
+	var gap := state.coins.sub(next)
+	if gap.lt(BigNumber.one()) or gap.lt(state.coins.mul(BigNumber.from_float(0.002))):
+		next = state.coins   # 吸附，避免无限逼近
+	_set_money_display(next)
 
 
 ## 积分金币飞行体：
@@ -973,24 +1065,34 @@ func _coin_duration(gained: BigNumber) -> float:
 	return clampf(0.5 + gained.to_float() * 0.006, 0.5, 3.0)
 
 
-## 金币数字跳数：从当前显示值滚到最新总额，时长与粒子一致（小丑牌式结算）
-func _count_up_coins(duration: float) -> void:
-	if money_label == null:
-		return
-	_play_money_dance()
-	if _coin_tween:
-		_coin_tween.kill()
-	var from := _displayed_coins
-	var target := state.coins
-	_coin_tween = create_tween()
-	_coin_tween.tween_method(_tick_count_up.bind(from, target), 0.0, 1.0, duration) \
-		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	_coin_tween.tween_callback(_set_money_display_exact.bind(target))
+## 按矿值选粒子贴图（六档都是 6 帧横排雪碧图，直接换 texture 即可）：
+## >0 橙砖 / >10 深砖 / >100 灰砖 / >1e3 铜币 / >1e4 银币 / >1e7 金币
+func _coin_particle_texture(gained: BigNumber) -> Texture2D:
+	if gained.gt(BigNumber.from_float(1e7)):
+		return COIN_TEX_GOLD
+	if gained.gt(BigNumber.from_float(1e4)):
+		return COIN_TEX_SILVER
+	if gained.gt(BigNumber.from_float(1e3)):
+		return COIN_TEX_BRONZE
+	if gained.gt(BigNumber.from_float(100.0)):
+		return COIN_TEX_BRICK_GRAY
+	if gained.gt(BigNumber.from_float(10.0)):
+		return COIN_TEX_BRICK_DARK
+	return COIN_TEX_BRICK_ORANGE
 
 
-## 跳数逐帧：大数走对数空间插值，避免大值线性插值时长时间停在原位
-func _tick_count_up(progress: float, from: BigNumber, to: BigNumber) -> void:
-	_set_money_display(BigNumber.lerp(from, to, progress))
+## 粒子大小倍率：log10 线性（1→1x，1e7→2.75x，封顶 3x 防爆屏）
+func _coin_size_mul(gained: BigNumber) -> float:
+	var logv := log(maxf(gained.to_float(), 1.0)) * 0.4343   # log10
+	return clampf(1.0 + logv * 0.25, 1.0, 3.0)
+
+
+## 初速度倍率：饱和曲线 1.6 − 0.6·e^(−0.35·log10)，渐近 1.6x 封顶——
+## 早晚期矿值差好多个数量级，对数线性加成都会让后期速度失控，
+## 指数级递减后 1e3≈1.39x、1e7≈1.55x、再大也几乎不再变快
+func _coin_velocity_mul(gained: BigNumber) -> float:
+	var logv := log(maxf(gained.to_float(), 1.0)) * 0.4343   # log10
+	return 1.6 - 0.6 * exp(-0.35 * logv)
 
 
 func _set_money_display(value: BigNumber) -> void:
@@ -998,14 +1100,9 @@ func _set_money_display(value: BigNumber) -> void:
 	_refresh_money_text()
 
 
-func _set_money_display_exact(value: BigNumber) -> void:
-	_displayed_coins = value
-	_refresh_money_text()
-
-
 func _refresh_money_text() -> void:
 	if money_label:
-		money_label.text = format_compact_coins(_displayed_coins)
+		money_label.text = format_compact_coins(_displayed_coins) + "$"
 
 
 ## Cookie Clicker 式紧凑数字：约三位有效数字，并避免显示成 1000K。
@@ -1014,26 +1111,28 @@ static func format_compact_coins(value: BigNumber) -> String:
 
 
 ## 获得金币时让文字做一次短促的弹跳、摇摆和挤压；连续收益会从头重播。
-func _play_money_dance() -> void:
+## strength ≥ 1：收益越大动作越夸张（在恒等值与关键帧之间按强度外插）。
+func _play_money_dance(strength := 1.0) -> void:
 	if money_label == null:
 		return
 	if _money_dance_tween:
 		_money_dance_tween.kill()
 	_reset_money_dance()
 
+	var s := strength
 	_money_dance_tween = create_tween()
-	_money_dance_tween.tween_property(money_label, "offset_transform_position", Vector2(-1, -5), 0.08) \
+	_money_dance_tween.tween_property(money_label, "offset_transform_position", Vector2(-1, -5) * s, 0.08) \
 		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	_money_dance_tween.parallel().tween_property(money_label, "offset_transform_scale", Vector2(1.22, 0.84), 0.08)
-	_money_dance_tween.parallel().tween_property(money_label, "offset_transform_rotation", deg_to_rad(-8.0), 0.08)
+	_money_dance_tween.parallel().tween_property(money_label, "offset_transform_scale", Vector2.ONE + (Vector2(1.22, 0.84) - Vector2.ONE) * s, 0.08)
+	_money_dance_tween.parallel().tween_property(money_label, "offset_transform_rotation", deg_to_rad(-8.0 * s), 0.08)
 
-	_money_dance_tween.tween_property(money_label, "offset_transform_position", Vector2(1, -3), 0.09)
-	_money_dance_tween.parallel().tween_property(money_label, "offset_transform_scale", Vector2(0.92, 1.20), 0.09)
-	_money_dance_tween.parallel().tween_property(money_label, "offset_transform_rotation", deg_to_rad(7.0), 0.09)
+	_money_dance_tween.tween_property(money_label, "offset_transform_position", Vector2(1, -3) * s, 0.09)
+	_money_dance_tween.parallel().tween_property(money_label, "offset_transform_scale", Vector2.ONE + (Vector2(0.92, 1.20) - Vector2.ONE) * s, 0.09)
+	_money_dance_tween.parallel().tween_property(money_label, "offset_transform_rotation", deg_to_rad(7.0 * s), 0.09)
 
-	_money_dance_tween.tween_property(money_label, "offset_transform_position", Vector2(-1, -1), 0.08)
-	_money_dance_tween.parallel().tween_property(money_label, "offset_transform_scale", Vector2(1.10, 0.94), 0.08)
-	_money_dance_tween.parallel().tween_property(money_label, "offset_transform_rotation", deg_to_rad(-3.0), 0.08)
+	_money_dance_tween.tween_property(money_label, "offset_transform_position", Vector2(-1, -1) * s, 0.08)
+	_money_dance_tween.parallel().tween_property(money_label, "offset_transform_scale", Vector2.ONE + (Vector2(1.10, 0.94) - Vector2.ONE) * s, 0.08)
+	_money_dance_tween.parallel().tween_property(money_label, "offset_transform_rotation", deg_to_rad(-3.0 * s), 0.08)
 
 	_money_dance_tween.tween_property(money_label, "offset_transform_position", Vector2.ZERO, 0.12) \
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
@@ -1101,28 +1200,114 @@ func _update_money_label() -> void:
 	_refresh_money_text()
 
 
-## 破纪录火焰：金币超过之前的最高值 → 冒火特效；
-## 一分钟内没破纪录则把纪录滚到当前值（下次超过再冒火）
-func _update_fire() -> void:
-	if money_fire_material == null:
+## 收入记录 + 冒火判定：矿从哪条边出屏，价值就记进哪条边的 10 秒滚动窗口；
+## 该边窗口收入按阈值分档后，火焰沿整条边显示：
+## >1e3 红 / >1e6 蓝 / >1e13 紫 / >1e20 黑 / >1e28 呼吸变色。
+func _record_income(gained: BigNumber, edge: StringName) -> void:
+	if not _edge_fires.has(edge) or gained.is_zero():
 		return
 	var now := Time.get_ticks_msec() / 1000.0
-	if state.coins.gt(_best_coins):
-		_best_coins = state.coins.duplicate()
-		_last_beat_time = now
-		_trigger_fire()
-	elif now - _last_beat_time > RECORD_WINDOW:
-		_best_coins = state.coins.duplicate()
+	var log: Array = _income_logs[edge]
+	log.append({"t": now, "v": gained.duplicate()})
+	while not log.is_empty() and now - log[0]["t"] > FIRE_WINDOW:
+		log.pop_front()
+	var sum := BigNumber.zero()
+	for e in log:
+		sum = sum.add(e["v"])
+	var tier := 0
+	for i in FIRE_TIERS.size():
+		if sum.gt(FIRE_TIERS[i]["threshold"]):
+			tier = i + 1
+	if tier == 0:
+		return
+	_fire_tiers[edge] = tier
+	_trigger_fire(edge, tier)
 
 
-## 冒火：拉高 shader 的 amount（火焰强度）保持一会儿再淡出
-func _trigger_fire() -> void:
-	if _fire_tween:
-		_fire_tween.kill()
-	money_fire_material.set_shader_parameter("amount", 6.0)
-	_fire_tween = create_tween()
-	_fire_tween.tween_interval(2.5)
-	_fire_tween.tween_property(money_fire_material, "shader_parameter/amount", 0.0, 0.8)
+## 冒火：按档位给该边的火焰条着色，amount 从当前值缓缓升到 5+tier（慢慢燃起，
+## shader 里火焰高度随 amount 生长），保持一会儿再缩回熄灭
+func _trigger_fire(edge: StringName, tier: int) -> void:
+	var mat := _edge_fires[edge]["mat"] as ShaderMaterial
+	var old := _fire_tweens.get(edge) as Tween
+	if old:
+		old.kill()
+	var data: Dictionary = FIRE_TIERS[tier - 1]
+	mat.set_shader_parameter("colour_1", data["c1"])
+	mat.set_shader_parameter("colour_2", data["c2"])
+	if not is_inside_tree():
+		mat.set_shader_parameter("amount", 5.0 + tier)
+		return   # 无场景树（单元测试）时跳过动画，直接到位
+	var t := create_tween()
+	t.tween_property(mat, "shader_parameter/amount", 5.0 + tier, 0.6) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)   # 慢慢燃起
+	t.tween_interval(2.5)
+	t.tween_property(mat, "shader_parameter/amount", 0.0, 0.8)
+	t.tween_callback(_on_fire_faded.bind(edge))
+	_fire_tweens[edge] = t
+
+
+func _on_fire_faded(edge: StringName) -> void:
+	_fire_tiers[edge] = 0
+
+
+## 第 5 档呼吸火：颜色沿色环循环（约 4 秒一圈），火舌与根部错开 0.15 相位；各边独立
+func _update_fire_breath() -> void:
+	var h := fposmod(Time.get_ticks_msec() / 1000.0 * 0.25, 1.0)
+	for edge in _edge_fires:
+		if int(_fire_tiers.get(edge, 0)) < 5:
+			continue
+		var mat := _edge_fires[edge]["mat"] as ShaderMaterial
+		mat.set_shader_parameter("colour_1", Color.from_hsv(h, 0.85, 1.0))
+		mat.set_shader_parameter("colour_2", Color.from_hsv(fposmod(h + 0.15, 1.0), 0.9, 0.9))
+
+
+# ==================== 屏幕四边火焰条 ====================
+
+## 在主 UI 层沿四条屏幕边各建一条火焰 ColorRect（各自独立 ShaderMaterial），
+## 条带 60px 厚、z_index=-1（垫在 UI 控件之下），旋转让火苗朝屏幕内：
+## 底边不转，顶边 180°，左边 90°，右边 -90°。
+func _setup_edge_fires() -> void:
+	if _coin_flight_layer == null:
+		return
+	for edge in EDGE_NAMES:
+		var rect := ColorRect.new()
+		rect.name = "EdgeFire_%s" % edge
+		rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		rect.z_index = -1
+		var mat := ShaderMaterial.new()
+		mat.shader = FIRE_SHADER
+		mat.set_shader_parameter("amount", 0.0)
+		mat.set_shader_parameter("id", float(EDGE_NAMES.find(edge)))
+		rect.material = mat
+		_coin_flight_layer.add_child(rect)
+		_edge_fires[edge] = {"rect": rect, "mat": mat}
+		_income_logs[edge] = []
+		_fire_tiers[edge] = 0
+	_layout_edge_fires()
+	get_viewport().size_changed.connect(_layout_edge_fires)
+
+
+## 条带布局：底/顶边用 W×T 横条；左/右边用 H×T 横条旋转 ±90°（绕中心 pivot）
+func _layout_edge_fires() -> void:
+	if _edge_fires.is_empty():
+		return
+	var size := get_viewport().get_visible_rect().size
+	var t := EDGE_FIRE_THICKNESS
+	_place_edge_fire(&"bottom", Vector2(0, size.y - t), Vector2(size.x, t), 0.0)
+	_place_edge_fire(&"top", Vector2.ZERO, Vector2(size.x, t), 180.0)
+	_place_edge_fire(&"left", Vector2(t - size.y, size.y - t) * 0.5, Vector2(size.y, t), 90.0)
+	_place_edge_fire(&"right", Vector2(2.0 * size.x - t - size.y, size.y - t) * 0.5, Vector2(size.y, t), -90.0)
+
+
+func _place_edge_fire(edge: StringName, pos: Vector2, strip_size: Vector2, deg: float) -> void:
+	var rect := _edge_fires[edge]["rect"] as ColorRect
+	rect.position = pos
+	rect.size = strip_size
+	rect.pivot_offset = strip_size * 0.5
+	rect.rotation_degrees = deg
+	# 告诉 shader 条带长宽比：噪声坐标按方形像素空间展开，防止横向被拉长
+	(_edge_fires[edge]["mat"] as ShaderMaterial).set_shader_parameter(
+		"aspect", strip_size.x / strip_size.y)
 
 
 # ==================== 存档 ====================
@@ -1142,9 +1327,10 @@ func _load_or_init() -> void:
 		_init_new_run()
 		return
 	_restore_grid(saved_grid)
-	# 兜底：存档缺中心地块（旧档/损坏）→ 重新初始化保证可玩
-	if not grid.has_cell(GridModel.CENTER_CELL):
-		push_warning("存档恢复: 缺少中心地块，重新初始化")
+	# 兜底：存档中心格没有地块（旧档/损坏/空壳 cell）→ 重新初始化保证可玩
+	var center := grid.get_cell(GridModel.CENTER_CELL)
+	if center == null or (center.above_block == null and center.below_block == null):
+		push_warning("存档恢复: 中心地块为空，重新初始化")
 		_init_new_run()
 
 
@@ -1159,9 +1345,11 @@ func _init_new_run() -> void:
 ## 从快照重建网格：先数据（cells），再场景（sprite），最后矿石（工厂）
 func _restore_grid(data: Dictionary) -> void:
 	for entry: Dictionary in data.get("cells", []):
-		var cell := Vector2i(int(entry["x"]), int(entry["y"]))
 		var below: BlockDef = db.get_tile(entry["below"]) if entry["below"] != "" else null
 		var above: BlockDef = db.get_tile(entry["above"]) if entry["above"] != "" else null
+		if below == null and above == null:
+			continue   # 全空格子是异常档（如导出包丢资源时写出的），跳过防污染
+		var cell := Vector2i(int(entry["x"]), int(entry["y"]))
 		grid.set_cell(cell, CellData.new(above, below))
 		if below != null:
 			create_sprite(false, cell, below)
@@ -1273,6 +1461,7 @@ func _place_selected(cell: Vector2i) -> void:
 	var cost := TilePricing.placement_cost(selected_tile, grid.get_placed_count(selected_tile.id))
 	if not state.spend_coins(cost):
 		print("金币不足：%s 需要 %s" % [selected_tile.display_name, cost.to_compact_string()])
+		_sm().play_sfx(&"cant_buy")
 		return
 	var result := grid.try_place_tile(cell, selected_tile)
 	if not result.is_ok():
@@ -1280,6 +1469,7 @@ func _place_selected(cell: Vector2i) -> void:
 		print("放置失败: %s" % result.message)
 		return
 	create_sprite(false, cell, selected_tile)
+	_sm().play_sfx(&"place_block")
 	_last_placed_cell = cell
 	# 写入后立刻刷新指针颜色（鼠标没动时 update_hover 会提前返回）
 	_update_pointer_tint()
@@ -1323,6 +1513,7 @@ func _remove_tile_at(cell: Vector2i) -> void:
 	if node != null:
 		tiles_by_cell.erase(cell)
 		node.queue_free()
+	_sm().play_sfx(&"remove_block")
 	# 刚删掉的格不立刻被批量放置补回来（长按左键 + 右键删除的组合操作）
 	_last_placed_cell = cell
 	_last_removed_cell = cell

@@ -64,6 +64,13 @@ func _init() -> void:
 	var mid := BigNumber.lerp(_bn("1e20"), _bn("1e21"), 0.5)
 	_check(mid.gt(_bn("1e20")) and mid.lt(_bn("1e21")), "大数 lerp 在区间内")
 
+	# --- 完整数值显示（悬浮提示） ---
+	_check(_bn("0").to_full_string() == "0", "full: 0")
+	_check(_bn("750").to_full_string() == "750", "full: 750")
+	_check(_bn("1234567").to_full_string() == "1,234,567", "full: 千分位")
+	_check(_bn("-1234").to_full_string() == "-1,234", "full: 负数千分位")
+	_check(_bn("1e22").to_full_string() == "1.0000e+22", "full: 超范围回落科学计数")
+
 	print("=== big_number_test：失败 %d 处 ===" % _failures)
 	quit(1 if _failures > 0 else 0)
 

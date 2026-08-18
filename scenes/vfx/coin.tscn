@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://cuxx4uwklitax"]
 
-[ext_resource type="Texture2D" uid="uid://n2bpqr851pix" path="res://assets/VfxMix/particle/coin_bronze.png" id="1_itfvt"]
+[ext_resource type="Texture2D" uid="uid://d3vg15k251iaj" path="res://assets/VfxMix/particle/brick_dark.png" id="1_itfvt"]
 
 [sub_resource type="CanvasItemMaterial" id="CanvasItemMaterial_iwaw6"]
 particles_animation = true
@@ -11,8 +11,8 @@ particles_anim_loop = false
 [sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_a2t78"]
 particle_flag_disable_z = true
 direction = Vector3(0, -1, 0)
-initial_velocity_min = 177.42
-initial_velocity_max = 370.97
+initial_velocity_min = 100.0
+initial_velocity_max = 220.0
 gravity = Vector3(0, 500, 0)
 anim_speed_max = 2.76
 
