@@ -1,16 +1,33 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://dbybm20a6dbsi"]
 
-[ext_resource type="Script" path="res://scripts/ui/talent_node.gd" id="1_node"]
+[ext_resource type="Script" uid="uid://boy1pv3lntwt6" path="res://scripts/ui/talent_node.gd" id="1_node"]
 [ext_resource type="Texture2D" uid="uid://m1ij61qpt62p" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_ALL.png" id="2_ui"]
+[ext_resource type="Shader" uid="uid://xe0chddojepi" path="res://scripts/shaders/reset_orb.gdshader" id="3_reset_orb_shader"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_tmp"]
 atlas = ExtResource("2_ui")
-region = Rect2(3, 1122, 10, 12)
+region = Rect2(346, 58, 28, 31)
 
-[node name="TalentNode" type="Node2D"]
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_reset_orb"]
+shader = ExtResource("3_reset_orb_shader")
+shader_parameter/water_color = Color(1, 0.85, 0.1, 1)
+shader_parameter/ball_color = Color(1, 1, 1, 1)
+shader_parameter/height = 1.0
+shader_parameter/wave_speed = 1.5
+shader_parameter/wave_ci = 0.025
+shader_parameter/ball_border_ci = 5.0
+shader_parameter/light_effect = false
+
+[node name="TalentNode" type="Node2D" unique_id=1274500727]
 script = ExtResource("1_node")
 
-[node name="Icon" type="Sprite2D" parent="."]
+[node name="Icon" type="Sprite2D" parent="." unique_id=195655822]
 position = Vector2(0, -6)
+scale = Vector2(2, 2)
 texture = SubResource("AtlasTexture_tmp")
-scale = Vector2(4, 4)
+
+[node name="OrbSprite" type="Sprite2D" parent="." unique_id=456179010]
+visible = false
+material = SubResource("ShaderMaterial_reset_orb")
+position = Vector2(0, -6)
+scale = Vector2(0.4, 0.4)

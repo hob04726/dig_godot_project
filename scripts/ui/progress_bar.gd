@@ -16,6 +16,9 @@ func _ready() -> void:
 	if atlas == null:
 		push_warning("progress_bar: 找不到图集")
 		return
+	# 根据图集宽度自动确定帧数（每行 16x16 帧），避免硬编码 15/16 与贴图失配
+	var atlas_width := atlas.get_width()
+	frames = maxi(1, atlas_width / int(frame_size.x))
 	for i in frames:
 		var at := AtlasTexture.new()
 		at.atlas = atlas
@@ -24,7 +27,7 @@ func _ready() -> void:
 	set_progress(0.0)
 
 
-## 0.0~1.0 的挖掘进度（0 = 还没挖）
+## 0.0~1.0 的挖掘进度（0 = 还没挖，1 = 挖完）
 func set_progress(p: float) -> void:
 	if _frame_textures.is_empty():
 		return

@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="OreDef" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/game/block/ore_def.gd" id="1_def"]
+[ext_resource type="Texture2D" uid="uid://brevbppkyvdpn" path="res://assets/blocks/png/block_TNT.png" id="2_tex"]
+
+[resource]
+script = ExtResource("1_def")
+id = &"tnt"
+display_name = "TNT"
+texture = ExtResource("2_tex")
+rarity = 1
+spawn_weight = 0.0
+base_value = 50
+base_hp = 20
+max_level = 1
+value_growth = 1.0
+hp_growth = 1.0
+size_growth = 0.0

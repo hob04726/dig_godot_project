@@ -1,6 +1,8 @@
 extends Node2D
 class_name TalentGrid
 
+const ResetVfxScript := preload("res://scripts/vfx/reset_vfx.gd")
+
 ## 天赋树控制器：从 defs/talents/*.csv 动态加载（TalentDb），按 (col,row) 实例化 TalentNode。
 ## 前置解锁制：所有前置购买后才显示/可解锁；普通天赋还可被升华天赋门控。
 ## 悬停显示 RichTextLabel 说明框（scenes/vfx/talent_label.tscn 原型）。
@@ -13,6 +15,7 @@ enum TreeMode { NORMAL, ASCENSION }
 @export var node_scene: PackedScene = null
 @export var tooltip_prototype: PackedScene = null   # scenes/vfx/talent_label.tscn
 @export var unlock_prototype: PackedScene = null    # scenes/vfx/unlock.tscn 购买特效（蓝/绿/红闪光爆发随机选一）
+@export var reset_vfx_scene: PackedScene = null     # scenes/vfx/reset.tscn 升华（重置）特效
 @export var cell_size := Vector2(100, 100)
 @export var camera: Camera2D = null
 @export var gold_label: RichTextLabel = null
@@ -200,8 +203,13 @@ func _build_tree() -> void:
 		# 购买记录统一走 GameState.record_talent_purchase 进存档
 	if _grid_overlay != null:
 		_grid_overlay.grid_bounds = _compute_bounds()
+		# 网格中心遮罩对齐 reset 节点（默认 (0,0)，保险起见同步一次）
+		var reset_node := _nodes_by_id.get(&"talent_reset") as TalentNode
+		if reset_node != null:
+			_grid_overlay.center_mask_position = reset_node.position
 	_refresh_all(false)   # 初始/重建展示直置状态，不做弹跳
 	_update_gold_label()
+	_update_reset_orb_progress()
 
 
 ## 前置解锁刷新：所有前置（含升华前置）已购买才显示，并更新可购买状态。
@@ -331,14 +339,35 @@ func _sync_purchased() -> void:
 		_purchased[id] = true
 
 
-## 点击"重置·升华"：直接升华。保留永久槽天赋，领取差值，重建普通树并写档。
+## 点击"重置·升华"：直接升华。保留永久槽天赋，领取差值，播放升华特效，然后重建普通树并写档。
 func _do_ascension() -> void:
 	var preserve := _talent_system.select_preserved_talents(_talent_system.get_permanent_slot_count())
+	var from_earned := _state.ascension_points_earned
 	var gain := _state.apply_ascension(preserve)
 	_talent_system.invalidate()
 	print("升华：领取 %s 升华点，进入新一轮" % gain.to_compact_string())
+
+	var from_lifetime := from_earned.mul(from_earned).mul(from_earned).mul(BigNumber.from_int(1_000_000))
+	var to_lifetime := _state.lifetime_coins
+	await _play_reset_vfx(from_lifetime, to_lifetime)
 	_build_tree()
 	_persist()
+
+
+## 播放升华（重置）特效：把 scenes/vfx/reset.tscn 实例加到根节点顶层，
+## 展示从上一轮回的升华点阈值到本轮累计金币的水位上升过程。动画结束后自动释放。
+func _play_reset_vfx(from_lifetime: BigNumber, to_lifetime: BigNumber) -> void:
+	if reset_vfx_scene == null:
+		return
+	var vfx := reset_vfx_scene.instantiate() as ResetVfxScript
+	if vfx == null:
+		return
+	get_tree().root.add_child(vfx)
+	vfx.z_index = 2000   # 确保画在所有 UI 之上
+	vfx.setup(from_lifetime, to_lifetime)
+	vfx.play()
+	await vfx.finished
+	vfx.queue_free()
 
 
 ## 写回存档：只更新 state，保留原网格数据（grid 由主场景持有并比对 run_version）
@@ -354,9 +383,21 @@ func persist() -> void:
 
 func _update_gold_label() -> void:
 	if gold_label:
-		var prefix := "升华点" if tree_mode == TreeMode.ASCENSION else "金币"
+		# 普通天赋树只显示金币数量，不显示“金币：”前缀；升华树保留“升华点：”前缀
+		var prefix := "升华点：" if tree_mode == TreeMode.ASCENSION else ""
 		var suffix := "" if tree_mode == TreeMode.ASCENSION else "$"
-		gold_label.text = "%s：%s%s" % [prefix, _current_balance().to_compact_string(), suffix]
+		gold_label.text = "%s%s%s" % [prefix, _current_balance().to_compact_string(), suffix]
+	_update_reset_orb_progress()
+
+
+## 找到重置节点并同步升华进度球缸水位
+func _update_reset_orb_progress() -> void:
+	if _state == null:
+		return
+	for node in _nodes:
+		if node.effect_type == "PRESTIGE_RESET":
+			node.set_orb_progress(_state.lifetime_coins)
+			return
 
 
 # ==================== 悬浮说明框 ====================
@@ -409,7 +450,11 @@ func _hide_tooltip() -> void:
 func _tooltip_text(node: TalentNode) -> String:
 	var text := "[center][b]%s[/b][/center]\n\n" % node.display_name
 	text += node.description
-	text += "\n\n成本：[b]%s[/b] %s" % [node.cost.to_compact_string(), node.currency]
+	if node.effect_type == "PRESTIGE_RESET" and _state != null:
+		var remaining := Prestige.coins_to_next_point(_state.lifetime_coins)
+		text += "\n\n下一升华点还需 [b]%s[/b]$" % remaining.to_compact_string()
+	else:
+		text += "\n\n成本：[b]%s[/b] %s" % [node.cost.to_compact_string(), node.currency]
 	if not node.prerequisite_ids.is_empty():
 		var names: Array[String] = []
 		for pid in node.prerequisite_ids:

@@ -10,9 +10,9 @@ func _init() -> void:
 	var db := DefDb.new()
 	db.load_all()
 
-	# 默认（无过滤）回归：能抽到矿石
+	# 无 allowed_ore_ids 表示没有解锁任何矿石，不应抽到矿
 	var any := db.roll_ore(1, _rng(1))
-	_check(any != null, "默认 roll_ore 返回矿石")
+	_check(any == null, "无 allowed 时 roll_ore 返回 null")
 
 	# allowed 过滤：只允许 coal → 恒 coal（种子无关）
 	for s in 10:

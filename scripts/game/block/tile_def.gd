@@ -6,25 +6,31 @@ class_name TileDef
 ## 数值写在 defs/tiles/*.tres 里。枚举值是稳定的整数，写进 .tres 时保持一致。
 
 enum Behavior {
-	NONE = 0,      # 普通地皮，无行为（dirt）
-	WATER = 1,     # 落上去的矿直接沉没消失
-	VOLCANO = 2,   # 周期性攻击四邻的矿；自身不能承载矿
-	UPGRADE = 3,   # 周期性给上方矿升一级
-	STONE = 4,     # 上方矿结算价值更高
-	SPAWN = 5,     # 周期性在自身生成矿石
-	RARITY = 6,    # 自动落矿时提高稀有度下限
-	PUSH = 7,      # 周期性把上方矿随机推向四邻
-	PULL = 8,      # 周期性把邻格的矿吸到自身
-	GRASS = 9,     # 上方矿受到的挖矿伤害更高
-	FIRE = 10,     # 周期性给上方矿伤害
+	NONE = 0,                 # 普通地皮，无行为（dirt）
+	WATER = 1,                # 落上去的矿直接沉没消失
+	DEPRECATED_VOLCANO = 2,   # 已删除：火山（保留数值保证旧档/枚举稳定）
+	UPGRADE = 3,              # 周期性给上方矿升一级
+	STONE = 4,                # 上方矿结算价值更高
+	SPAWN = 5,                # 周期性在自身生成矿石
+	RARITY = 6,               # 自动落矿时提高稀有度下限
+	PUSH = 7,                 # 周期性把上方矿随机推向四邻
+	PULL = 8,                 # 周期性把邻格的矿吸到自身
+	GRASS = 9,                # 上方矿受到的挖矿伤害更高
+	FIRE = 10,                # 周期性给上方矿伤害
+	CONVEYOR_BELT_LEFTDOWN = 11,  # 传送带：把上方矿推向左下（grid +0,+1）
+	CONVEYOR_BELT_LEFTUP = 12,    # 传送带：把上方矿推向左上（grid -1, 0）
+	CONVEYOR_BELT_RIGHTDOWN = 13, # 传送带：把上方矿推向右下（grid +1, 0）
+	CONVEYOR_BELT_RIGHTUP = 14,   # 传送带：把上方矿推向右上（grid 0,-1）
+	TNT_SPAWN = 15,           # 周期性在自身生成 TNT 矿
+	TNT = 16,                 # TNT 地皮：放置后生成 TNT 矿，倒计时后引爆
 }
 
 ## 该地皮的行为类型
 @export var behavior: Behavior = Behavior.NONE
 
-## 周期性行为的触发间隔（秒）：volcano/upgrade/spawn/push/pull/fire
+## 周期性行为的触发间隔（秒）：upgrade/spawn/push/pull/fire/conveyor/tnt_spawn
 @export var tick_interval: float = 2.0
-## 每次造成伤害：volcano（对四邻）/ fire（对上方）
+## 每次造成伤害：fire（对上方）
 @export var damage: float = 0.0
 ## 结算价值倍率：stone
 @export var value_multiplier: float = 1.0

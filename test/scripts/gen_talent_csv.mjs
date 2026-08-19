@@ -40,20 +40,21 @@ function costRow(costBig) {
 }
 
 // ---------- 常量数据 ----------
-const ORES = ['coal', 'iron', 'zinc', 'gold', 'crystal', 'obsidian', 'diamond', 'cat'];
-const ORE_NAME = { coal: '煤矿', iron: '铁矿', zinc: '锌矿', gold: '金矿', crystal: '水晶矿', obsidian: '黑曜石', diamond: '钻石矿', cat: '猫矿' };
+const ORES = ['dirt', 'coal', 'iron', 'zinc', 'gold', 'crystal', 'obsidian', 'diamond', 'cat'];
+const ORE_NAME = { dirt: '泥土', coal: '煤矿', iron: '铁矿', zinc: '锌矿', gold: '金矿', crystal: '水晶矿', obsidian: '黑曜石', diamond: '钻石矿', cat: '猫矿' };
 const ORE_COLOR = { gold: 'gold' }; // 金矿名称用黄色
 const ORE_UNLOCK = [
-  { id: 'coal', cost: 0n, prereq: '', cond: '' },   // 0 费但需手动点击解锁
+  { id: 'dirt', cost: 0n, prereq: '', cond: '' },                  // 开局默认自然落矿
+  { id: 'coal', cost: 50n, prereq: '', cond: 'dirt_mined ≥ 50' },
   { id: 'iron', cost: 250n, prereq: 'unlock_coal', cond: 'coal_mined ≥ 50' },
-  { id: 'zinc', cost: 2750n, prereq: 'unlock_iron', cond: 'iron_mined ≥ 50' },
-  { id: 'gold', cost: 30000n, prereq: 'unlock_zinc', cond: 'zinc_mined ≥ 50' },
-  { id: 'crystal', cost: 325000n, prereq: 'unlock_gold', cond: 'gold_mined ≥ 50' },
-  { id: 'obsidian', cost: 3500000n, prereq: 'unlock_crystal', cond: 'crystal_mined ≥ 50' },
-  { id: 'diamond', cost: 50000000n, prereq: 'unlock_obsidian', cond: 'obsidian_mined ≥ 50' },
-  { id: 'cat', cost: 825000000n, prereq: 'unlock_diamond', cond: 'diamond_mined ≥ 50' },
+  { id: 'zinc', cost: 2500n, prereq: 'unlock_iron', cond: 'iron_mined ≥ 50' },
+  { id: 'gold', cost: 25000n, prereq: 'unlock_zinc', cond: 'zinc_mined ≥ 50' },
+  { id: 'crystal', cost: 250000n, prereq: 'unlock_gold', cond: 'gold_mined ≥ 50' },
+  { id: 'obsidian', cost: 2500000n, prereq: 'unlock_crystal', cond: 'crystal_mined ≥ 50' },
+  { id: 'diamond', cost: 25000000n, prereq: 'unlock_obsidian', cond: 'obsidian_mined ≥ 50' },
+  { id: 'cat', cost: 250000000n, prereq: 'unlock_diamond', cond: 'diamond_mined ≥ 50' },
 ];
-// 矿物价值升级：tier1 成本 = 20×解锁价（coal 例外固定 750），倍率见下
+// 矿物价值升级：tier1 成本 = 20×解锁价（dirt 特殊 50，coal 特殊 250），倍率见下
 const PROD_MULT = [1n, 5n, 50n, 5000n, 500000n, 50000000n, 50000000000n, 50000000000000n, 50000000000000000n, 50000000000000000000n];
 const PROD_MINED = [1, 5, 25, 50, 100, 200, 400, 800, 1600, 3200]; // ore_mined 门槛
 const PROD_STAGE = ['本轮核心', '本轮核心', '本轮核心', '本轮核心', '升华扩展 I', '升华扩展 I', '大数阶段', '大数阶段', '终局阶段', '终局阶段'];
@@ -62,17 +63,22 @@ const PROD_FLAVOR = ['基础工具', '标准流程', '机械化', '精密钻探'
 
 // 地块：id / 显示名 / 解锁费 / 放置基准价 / 行为升级(L1..L5 的数值+描述)
 const TILES = [
-  { id: 'dirt', name: '泥土', unlock: 0n,     place: 10n,      up: [['1.1', '手挖伤害 ×1.1'], ['1.2', '手挖伤害 ×1.2'], ['1.3', '手挖伤害 ×1.3'], ['1.4', '手挖伤害 ×1.4'], ['1.5', '手挖伤害 ×1.5']], upBase: 100n },
-  { id: 'grass', name: '草地', unlock: 500n,  place: 50n,      up: [['2.0', '手挖伤害 ×2'], ['2.5', '手挖伤害 ×2.5'], ['3.0', '手挖伤害 ×3'], ['3.5', '手挖伤害 ×3.5'], ['4.0', '手挖伤害 ×4']], upBase: 500n },
-  { id: 'stone', name: '石头', unlock: 2500n, place: 250n,     up: [['2.0', '结算价值 ×2'], ['2.5', '结算价值 ×2.5'], ['3.0', '结算价值 ×3'], ['3.5', '结算价值 ×3.5'], ['4.0', '结算价值 ×4']], upBase: 2500n },
-  { id: 'water', name: '水域', unlock: 12500n, place: 1250n,   up: [['0.15', '沉没返还 15%'], ['0.20', '沉没返还 20%'], ['0.25', '沉没返还 25%'], ['0.30', '沉没返还 30%'], ['0.35', '沉没返还 35%']], upBase: 12500n },
-  { id: 'fire', name: '熔岩', unlock: 50000n, place: 5000n,    up: [['15', '每秒伤害 15'], ['20', '每秒伤害 20'], ['25', '每秒伤害 25'], ['30', '每秒伤害 30'], ['35', '每秒伤害 35']], upBase: 50000n },
-  { id: 'push', name: '传送带', unlock: 125000n, place: 12500n, up: [['1.8', '推动周期 1.8s'], ['1.6', '推动周期 1.6s'], ['1.4', '推动周期 1.4s'], ['1.2', '推动周期 1.2s'], ['1.0', '推动周期 1.0s']], upBase: 125000n },
-  { id: 'pull', name: '磁吸', unlock: 250000n, place: 25000n,  up: [['1.8', '拉动周期 1.8s'], ['1.6', '拉动周期 1.6s'], ['1.4', '拉动周期 1.4s'], ['1.2', '拉动周期 1.2s'], ['1.0', '拉动周期 1.0s']], upBase: 250000n },
-  { id: 'volcano_stable', name: '稳定火山', unlock: 1250000n, place: 125000n, up: [['45', '四邻伤害 45'], ['60', '四邻伤害 60'], ['75', '四邻伤害 75'], ['90', '四邻伤害 90'], ['105', '四邻伤害 105']], upBase: 1250000n },
-  { id: 'upgrade', name: '升级台', unlock: 5000000n, place: 500000n, up: [['2.5', '升级周期 2.5s'], ['2.0', '升级周期 2.0s'], ['1.5', '升级周期 1.5s'], ['1.2', '升级周期 1.2s'], ['1.0', '升级周期 1.0s']], upBase: 5000000n },
-  { id: 'rarity', name: '稀有矿脉', unlock: 10000000n, place: 1000000n, up: [['3', '稀有度过滤 ≥3'], ['4', '稀有度过滤 ≥4'], ['4', '过滤 ≥4 且结算 ×1.1'], ['4', '过滤 ≥4 且结算 ×1.2'], ['4', '过滤 ≥4 且结算 ×1.3']], upBase: 10000000n },
-  { id: 'spawn', name: '水晶矿脉', unlock: 25000000n, place: 2500000n, up: [['4.0', '生成周期 4.0s'], ['3.0', '生成周期 3.0s'], ['2.5', '生成周期 2.5s'], ['2.0', '生成周期 2.0s'], ['1.5', '生成周期 1.5s']], upBase: 25000000n },
+  { id: 'dirt', name: '泥土', unlock: 0n,       place: 1n,        up: [['1.1', '手挖伤害 ×1.1'], ['1.2', '手挖伤害 ×1.2'], ['1.3', '手挖伤害 ×1.3'], ['1.4', '手挖伤害 ×1.4'], ['1.5', '手挖伤害 ×1.5']], upBase: 10n },
+  { id: 'grass', name: '草地', unlock: 100n,    place: 10n,       up: [['2.0', '手挖伤害 ×2'], ['2.5', '手挖伤害 ×2.5'], ['3.0', '手挖伤害 ×3'], ['3.5', '手挖伤害 ×3.5'], ['4.0', '手挖伤害 ×4']], upBase: 100n },
+  { id: 'stone', name: '石头', unlock: 500n,    place: 50n,       up: [['2.0', '结算价值 ×2'], ['2.5', '结算价值 ×2.5'], ['3.0', '结算价值 ×3'], ['3.5', '结算价值 ×3.5'], ['4.0', '结算价值 ×4']], upBase: 500n },
+  { id: 'water', name: '水域', unlock: 2500n,   place: 250n,      up: [['0.15', '沉没返还 15%'], ['0.20', '沉没返还 20%'], ['0.25', '沉没返还 25%'], ['0.30', '沉没返还 30%'], ['0.35', '沉没返还 35%']], upBase: 2500n },
+  { id: 'fire', name: '熔岩', unlock: 12500n,   place: 1250n,     up: [['15', '每秒伤害 15'], ['20', '每秒伤害 20'], ['25', '每秒伤害 25'], ['30', '每秒伤害 30'], ['35', '每秒伤害 35']], upBase: 12500n },
+  { id: 'push', name: '传送带', unlock: 50000n,  place: 5000n,     up: [['1.8', '推动周期 1.8s'], ['1.6', '推动周期 1.6s'], ['1.4', '推动周期 1.4s'], ['1.2', '推动周期 1.2s'], ['1.0', '推动周期 1.0s']], upBase: 50000n },
+  { id: 'pull', name: '磁吸', unlock: 150000n,  place: 15000n,    up: [['1.8', '拉动周期 1.8s'], ['1.6', '拉动周期 1.6s'], ['1.4', '拉动周期 1.4s'], ['1.2', '拉动周期 1.2s'], ['1.0', '拉动周期 1.0s']], upBase: 150000n },
+  { id: 'upgrade', name: '升级台', unlock: 1000000n, place: 100000n, up: [['2.5', '升级周期 2.5s'], ['2.0', '升级周期 2.0s'], ['1.5', '升级周期 1.5s'], ['1.2', '升级周期 1.2s'], ['1.0', '升级周期 1.0s']], upBase: 1000000n },
+  { id: 'rarity', name: '稀有矿脉', unlock: 3000000n, place: 300000n, up: [['3', '稀有度过滤 ≥3'], ['4', '稀有度过滤 ≥4'], ['4', '过滤 ≥4 且结算 ×1.1'], ['4', '过滤 ≥4 且结算 ×1.2'], ['4', '过滤 ≥4 且结算 ×1.3']], upBase: 3000000n },
+  { id: 'spawn', name: '水晶矿脉', unlock: 10000000n, place: 1000000n, up: [['4.0', '生成周期 4.0s'], ['3.0', '生成周期 3.0s'], ['2.5', '生成周期 2.5s'], ['2.0', '生成周期 2.0s'], ['1.5', '生成周期 1.5s']], upBase: 10000000n },
+  { id: 'conveyor_belt_leftdown', name: '传送带·左下', unlock: 50000n, place: 5000n, up: [['0.8', '运输周期 0.8s'], ['0.6', '运输周期 0.6s'], ['0.5', '运输周期 0.5s'], ['0.4', '运输周期 0.4s'], ['0.3', '运输周期 0.3s']], upBase: 50000n },
+  { id: 'conveyor_belt_leftup', name: '传送带·左上', unlock: 50000n, place: 5000n, up: [['0.8', '运输周期 0.8s'], ['0.6', '运输周期 0.6s'], ['0.5', '运输周期 0.5s'], ['0.4', '运输周期 0.4s'], ['0.3', '运输周期 0.3s']], upBase: 50000n },
+  { id: 'conveyor_belt_rightdown', name: '传送带·右下', unlock: 50000n, place: 5000n, up: [['0.8', '运输周期 0.8s'], ['0.6', '运输周期 0.6s'], ['0.5', '运输周期 0.5s'], ['0.4', '运输周期 0.4s'], ['0.3', '运输周期 0.3s']], upBase: 50000n },
+  { id: 'conveyor_belt_rightup', name: '传送带·右上', unlock: 50000n, place: 5000n, up: [['0.8', '运输周期 0.8s'], ['0.6', '运输周期 0.6s'], ['0.5', '运输周期 0.5s'], ['0.4', '运输周期 0.4s'], ['0.3', '运输周期 0.3s']], upBase: 50000n },
+  { id: 'tnt_spawn', name: 'TNT 生成器', unlock: 200000n, place: 20000n, up: [['2.5', '生成周期 2.5s'], ['2.0', '生成周期 2.0s'], ['1.5', '生成周期 1.5s'], ['1.2', '生成周期 1.2s'], ['1.0', '生成周期 1.0s']], upBase: 200000n },
+  { id: 'tnt', name: 'TNT', unlock: 50000n, place: 5000n, up: [['4.5', '引爆时间 4.5s'], ['4.0', '引爆时间 4.0s'], ['3.5', '引爆时间 3.5s'], ['3.0', '引爆时间 3.0s'], ['2.5', '引爆时间 2.5s']], upBase: 50000n },
 ];
 const TILE_COLOR = { grass: 'green', fire: 'red', water: 'blue', gold: 'gold', stone: 'gray' };
 
@@ -81,15 +87,24 @@ const TERRAIN_TARGET = {
   dirt: ['coal'], grass: ['gold'], stone: ['iron'], water: ['zinc'],
   fire: ORES, push: ['coal', 'iron', 'zinc', 'gold'],
   pull: ['crystal', 'obsidian', 'diamond', 'cat'],
-  volcano_stable: ['obsidian'], upgrade: ['cat'], rarity: ['diamond'], spawn: ['crystal'],
+  upgrade: ['cat'], rarity: ['diamond'], spawn: ['crystal'],
+  conveyor_belt_leftdown: ['coal', 'iron'], conveyor_belt_leftup: ['coal', 'iron'],
+  conveyor_belt_rightdown: ['coal', 'iron'], conveyor_belt_rightup: ['coal', 'iron'],
+  tnt_spawn: ['obsidian'], tnt: ['obsidian'],
 };
 const TERRAIN_COST = {
-  dirt: [1800n, 130000n, 2900000n], grass: [850000n, 63000000n, 1400000000n],
-  stone: [18000n, 1300000n, 29000000n], water: [140000n, 11000000n, 230000000n],
-  fire: [190000000n, 14000000000n, 310000000000n], push: [300000n, 30000000n, 650000000n],
-  pull: [290000000n, 29000000000n, 620000000000n], volcano_stable: [25000000n, 1900000000n, 40000000000n],
-  upgrade: [790000000n, 59000000000n, 1300000000000n], rarity: [140000000n, 11000000000n, 220000000000n],
-  spawn: [4700000n, 350000000n, 7500000000n],
+  dirt: [10n, 500n, 10000n], grass: [500n, 10000n, 200000n],
+  stone: [50n, 1000n, 20000n], water: [250n, 5000n, 100000n],
+  fire: [2500n, 50000n, 1000000n], push: [1000n, 20000n, 400000n],
+  pull: [3000n, 60000n, 1200000n],
+  upgrade: [20000n, 400000n, 8000000n], rarity: [60000n, 1200000n, 24000000n],
+  spawn: [200000n, 4000000n, 80000000n],
+  conveyor_belt_leftdown: [1000n, 20000n, 400000n],
+  conveyor_belt_leftup: [1000n, 20000n, 400000n],
+  conveyor_belt_rightdown: [1000n, 20000n, 400000n],
+  conveyor_belt_rightup: [1000n, 20000n, 400000n],
+  tnt_spawn: [4000n, 80000n, 1600000n],
+  tnt: [1000n, 20000n, 400000n],
 };
 const TERRAIN_RATE = [0.10, 0.15, 0.20];
 const TERRAIN_NEED = [10, 50, 100];
@@ -112,24 +127,24 @@ const G = (s) => `[color=#FACC15][b]${s}[/b][/color]`;
 // 1) 升华根
 pushNormal({
   id: 'talent_reset', name: '重置·升华',
-  desc: `重置本轮${C('普通天赋')}并进行${C('升华')}，结算本次可获得的${C('升华点')}。`,
+  desc: `重置本轮${C('普通天赋')}并进行${C('升华')}，结算本次可获得的${C('升华点')}与${C('声望')}。`,
   cost0: true, col: 0, row: 0, prereq: '', cond: '始终可见',
   effect: 'PRESTIGE_RESET', targets: 'normal_run', op: 'RESET', value: 1,
-  secondary: '升华点 = floor(cbrt(累计金币 / 1e6))，升华时领取差值；每点 +1% 金币获取（永久）',
+  secondary: '升华点 = floor(cbrt(累计金币 / 1e6))，升华时领取差值；每点升华点提供 +1% 金币获取（计入声望）',
   group: '核心', branch: 'prestige', level: 'Root', stage: '核心',
 });
 
 // 1.5) 稿子升级（上方：col 0 向上链，跨升四级后可强化暴击/范围）
 {
   const PICKAXE = [
-    ['pickaxe_root', '稿子精通', `解锁${C('稿子升级')}链。`, 1000, -1, 'PICKAXE_UPGRADE', 'UNLOCK', '1', ''],
-    ['pickaxe_dmg_1', '稿子·锋利 I', `${C('稿子基础伤害')} ${B('+5')}。`, 5000, -2, 'PICKAXE_DAMAGE_FLAT', 'ADD', '5', 'pickaxe_root'],
-    ['pickaxe_dmg_2', '稿子·锋利 II', `${C('稿子基础伤害')} ${B('+5')}。`, 50000, -3, 'PICKAXE_DAMAGE_FLAT', 'ADD', '5', 'pickaxe_dmg_1'],
-    ['pickaxe_dmg_3', '稿子·锋利 III', `${C('稿子基础伤害')} ${B('+10')}。`, 500000, -4, 'PICKAXE_DAMAGE_FLAT', 'ADD', '10', 'pickaxe_dmg_2'],
-    ['pickaxe_crit_1', '稿子·精准 I', `${C('暴击几率')} ${B('+2%')}。`, 5000000, -5, 'PICKAXE_CRIT_CHANCE', 'ADD', '0.02', 'pickaxe_dmg_3'],
-    ['pickaxe_crit_2', '稿子·精准 II', `${C('暴击几率')} ${B('+3%')}。`, 50000000, -6, 'PICKAXE_CRIT_CHANCE', 'ADD', '0.03', 'pickaxe_crit_1'],
-    ['pickaxe_critdmg', '稿子·重击', `${C('暴击伤害')} ${B('+50%')}。`, 500000000, -7, 'PICKAXE_CRIT_DAMAGE', 'ADD', '0.5', 'pickaxe_crit_2'],
-    ['pickaxe_aoe', '稿子·横扫', `${C('稿子作用范围')} ${B('+1 格')}。`, 5000000000, -8, 'PICKAXE_AOE', 'SET', '1', 'pickaxe_critdmg'],
+    ['pickaxe_root', '稿子精通', `解锁${C('稿子升级')}链。`, 500, -1, 'PICKAXE_UPGRADE', 'UNLOCK', '1', ''],
+    ['pickaxe_dmg_1', '稿子·锋利 I', `${C('稿子基础伤害')} ${B('+5')}。`, 2500, -2, 'PICKAXE_DAMAGE_FLAT', 'ADD', '5', 'pickaxe_root'],
+    ['pickaxe_dmg_2', '稿子·锋利 II', `${C('稿子基础伤害')} ${B('+5')}。`, 25000, -3, 'PICKAXE_DAMAGE_FLAT', 'ADD', '5', 'pickaxe_dmg_1'],
+    ['pickaxe_dmg_3', '稿子·锋利 III', `${C('稿子基础伤害')} ${B('+10')}。`, 250000, -4, 'PICKAXE_DAMAGE_FLAT', 'ADD', '10', 'pickaxe_dmg_2'],
+    ['pickaxe_crit_1', '稿子·精准 I', `${C('暴击几率')} ${B('+2%')}。`, 2500000, -5, 'PICKAXE_CRIT_CHANCE', 'ADD', '0.02', 'pickaxe_dmg_3'],
+    ['pickaxe_crit_2', '稿子·精准 II', `${C('暴击几率')} ${B('+3%')}。`, 25000000, -6, 'PICKAXE_CRIT_CHANCE', 'ADD', '0.03', 'pickaxe_crit_1'],
+    ['pickaxe_critdmg', '稿子·重击', `${C('暴击伤害')} ${B('+50%')}。`, 250000000, -7, 'PICKAXE_CRIT_DAMAGE', 'ADD', '0.5', 'pickaxe_crit_2'],
+    ['pickaxe_aoe', '稿子·横扫', `${C('稿子作用范围')} ${B('+1 格')}。`, 2500000000, -8, 'PICKAXE_AOE', 'SET', '1', 'pickaxe_critdmg'],
   ];
   for (let i = 0; i < PICKAXE.length; i++) {
     const [id, name, desc, cost, row, effect, op, value, prereq] = PICKAXE[i];
@@ -148,12 +163,12 @@ pushNormal({
 // 1.6) 全局金币收益（左侧：row 0 向左链 + 末端分支）
 {
   const COIN = [
-    ['coin_bonus', '金币收益', `${C('全局金币获取')} ${B('+10%')}。`, 500, -1, 'GLOBAL_COIN_MULT', 'ADD', '0.1'],
-    ['coin_bonus_2', '金币收益 II', `${C('全局金币获取')} ${B('+10%')}。`, 5000, -2, 'GLOBAL_COIN_MULT', 'ADD', '0.1'],
-    ['coin_bonus_3', '金币收益 III', `${C('全局金币获取')} ${B('+10%')}。`, 50000, -3, 'GLOBAL_COIN_MULT', 'ADD', '0.1'],
-    ['coin_bonus_4', '金币收益 IV', `${C('全局金币获取')} ${B('+10%')}。`, 500000, -4, 'GLOBAL_COIN_MULT', 'ADD', '0.1'],
-    ['coin_bonus_5', '金币收益 V', `${C('全局金币获取')} ${B('+10%')}。`, 5000000, -5, 'GLOBAL_COIN_MULT', 'ADD', '0.1'],
-    ['coin_bonus_6', '金币收益 VI', `${C('全局金币获取')} ${B('+10%')}。`, 50000000, -6, 'GLOBAL_COIN_MULT', 'ADD', '0.1'],
+    ['coin_bonus', '金币收益', `${C('全局金币获取')} ${B('+10%')}。`, 100, -1, 'GLOBAL_COIN_MULT', 'ADD', '0.1'],
+    ['coin_bonus_2', '金币收益 II', `${C('全局金币获取')} ${B('+10%')}。`, 1000, -2, 'GLOBAL_COIN_MULT', 'ADD', '0.1'],
+    ['coin_bonus_3', '金币收益 III', `${C('全局金币获取')} ${B('+10%')}。`, 10000, -3, 'GLOBAL_COIN_MULT', 'ADD', '0.1'],
+    ['coin_bonus_4', '金币收益 IV', `${C('全局金币获取')} ${B('+10%')}。`, 100000, -4, 'GLOBAL_COIN_MULT', 'ADD', '0.1'],
+    ['coin_bonus_5', '金币收益 V', `${C('全局金币获取')} ${B('+10%')}。`, 1000000, -5, 'GLOBAL_COIN_MULT', 'ADD', '0.1'],
+    ['coin_bonus_6', '金币收益 VI', `${C('全局金币获取')} ${B('+10%')}。`, 10000000, -6, 'GLOBAL_COIN_MULT', 'ADD', '0.1'],
   ];
   for (let i = 0; i < COIN.length; i++) {
     const [id, name, desc, cost, col, effect, op, value] = COIN[i];
@@ -193,7 +208,7 @@ ORES.forEach((ore, i) => {
     group: '矿物解锁', branch: ore, level: 'Unlock', stage: '本轮核心',
     big: u.cost > INT64_MAX ? 'true' : 'false',
   });
-  const prod01 = ore === 'coal' ? 750n : u.cost * 20n;
+  const prod01 = ore === 'dirt' ? 50n : (ore === 'coal' ? 250n : u.cost * 20n);
   for (let t = 1; t <= 10; t++) {
     const costBig = prod01 * PROD_MULT[t - 1];
     const c = costRow(costBig);
@@ -283,7 +298,7 @@ const ASC = [];
 function pushAsc(o) {
   ASC.push([o.id, o.name, o.desc, '升华点', String(o.cost), String(o.col), String(o.row), o.prereq, o.effect, String(o.value), String(o.maxRank ?? 1), o.stage, o.notes]);
 }
-pushAsc({ id: 'meta_legacy', name: '矿业传承', desc: `${C('永久')}树根；启用${C('升华点')}与${C('永久升级')}。`, cost: 0, col: 0, row: 0, prereq: '', effect: 'UNLOCK_META', value: 1, stage: '树根', notes: '启用升华点与永久升级。升华点公式（Cookie Clicker 式）：总点 = floor(cbrt(累计金币/1e6))，按全时间累计推导永不减少，升华时领取差值；每点 +1% 金币获取（按已领取点数，全局被动）。购买状态永久保存。' });
+pushAsc({ id: 'meta_legacy', name: '矿业传承', desc: `${C('永久')}树根；启用${C('升华点')}与${C('声望')}。`, cost: 0, col: 0, row: 0, prereq: '', effect: 'UNLOCK_META', value: 1, stage: '树根', notes: '启用升华点与声望。升华点公式（Cookie Clicker 式）：总点 = floor(cbrt(累计金币/1e6))，按全时间累计推导永不减少，升华时领取差值；每点升华点提供 +1% 金币获取（按已领取点数计入声望，全局被动）。购买状态永久保存。' });
 pushAsc({ id: 'meta_deep_mining', name: '深层采矿许可', desc: `允许购买全部${C('矿物')}${C('价值升级')}的${B('第 5~6 级')}。`, cost: 10, col: 0, row: 1, prereq: 'meta_legacy', effect: 'UNLOCK_TIER_RANGE', value: '5-6', stage: '扩展 I', notes: '允许购买全部矿物价值升级第 5~6 级。购买状态永久保存。' });
 pushAsc({ id: 'meta_abyssal_mining', name: '深渊采矿许可', desc: `允许购买${C('矿物')}${C('价值升级')}的${B('第 7~8 级')}；成本超 int，需${B('BigNumber')}。`, cost: 250, col: 0, row: 2, prereq: 'meta_deep_mining', effect: 'UNLOCK_TIER_RANGE', value: '7-8', stage: '大数', notes: '允许购买第 7~8 级（成本超 int，需 BigNumber）。购买状态永久保存。' });
 pushAsc({ id: 'meta_endless_mining', name: '无尽采矿许可', desc: `允许购买${C('矿物')}${C('价值升级')}的${B('第 9~10 级')}；必须启用${B('BigNumber')}。`, cost: 5000, col: 0, row: 3, prereq: 'meta_abyssal_mining', effect: 'UNLOCK_TIER_RANGE', value: '9-10', stage: '终局', notes: '允许购买第 9~10 级；必须启用 BigNumber。购买状态永久保存。' });

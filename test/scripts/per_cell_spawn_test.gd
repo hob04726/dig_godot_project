@@ -30,6 +30,10 @@ func _run() -> void:
 	_check(free_count > 0, "存在空闲格子（实测 %d）" % free_count)
 	_check(gm._cell_spawn_timers.size() > 0, "独立计时器表非空（%d 个）" % gm._cell_spawn_timers.size())
 
+	# 解锁煤矿，让自然落矿池非空（否则 reset 后门控会阻止所有落矿）
+	gm.state.record_talent_purchase(&"unlock_coal")
+	gm._talent_system.invalidate()
+
 	# 初始间隔都在 ±jitter 区间内（大体一致但有快慢差异，不再是 0.2~1.0× 的大散布）
 	# 必须在采样前检查：采样后计时器已衰减/清零
 	var lo := gm.spawn_interval * (1.0 - gm.spawn_interval_jitter)

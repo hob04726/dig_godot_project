@@ -23,12 +23,17 @@ const TILE_PARAM_MAP := {
 	&"stone": &"value_multiplier",
 	&"water": &"sink_refund_ratio",
 	&"fire": &"damage",
-	&"volcano_stable": &"damage",
 	&"push": &"tick_interval",
 	&"pull": &"tick_interval",
 	&"upgrade": &"tick_interval",
 	&"spawn": &"tick_interval",
 	&"rarity": &"min_rarity",
+	&"conveyor_belt_leftdown": &"tick_interval",
+	&"conveyor_belt_leftup": &"tick_interval",
+	&"conveyor_belt_rightdown": &"tick_interval",
+	&"conveyor_belt_rightup": &"tick_interval",
+	&"tnt_spawn": &"tick_interval",
+	&"tnt": &"tick_interval",
 }
 
 var _state: GameState
@@ -167,7 +172,7 @@ func get_terrain_synergy(ore_id: StringName, placed_counts: Dictionary) -> float
 
 # ==================== 升华 ====================
 
-## 永久金币倍率（基于已领取升华点；委托 GameState）
+## 声望倍率（基于已领取升华点；委托 GameState）
 func get_permanent_multiplier() -> BigNumber:
 	return _state.permanent_multiplier()
 
@@ -194,7 +199,7 @@ func select_preserved_talents(slot_count: int) -> Array[StringName]:
 
 # ==================== 结算 / 挖矿管线 ====================
 
-## 完整金币结算：base(已含 tile 倍率) × 矿价值 × 地块协同 × 全局矿石价值 × reward_ratio × 全局金币 × 永久倍率
+## 完整金币结算：base(已含 tile 倍率) × 矿价值 × 地块协同 × 全局矿石价值 × reward_ratio × 全局金币 × 声望倍率
 func compute_coin_gain(base_value: int, ore_id: StringName,
 		placed_counts: Dictionary, reward_ratio: float = 1.0) -> BigNumber:
 	_ensure()
@@ -252,6 +257,9 @@ func _rebuild() -> void:
 	_unlocked_ores.clear()
 	_unlocked_tiles.clear()
 	_terrain_defs.clear()
+
+	# 泥土矿为开局默认解锁，无需天赋
+	_unlocked_ores[&"dirt"] = true
 
 	for def in _db.get_all_defs():
 		if not _is_purchased(def):

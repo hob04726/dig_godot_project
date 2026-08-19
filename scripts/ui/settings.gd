@@ -25,11 +25,20 @@ var _icon_btn: Button = null
 var _save_btn: Button = null
 var _sliders: Dictionary = {}      # StringName 总线名 → HSlider（&"" = Master）
 var _fullscreen_check: CheckButton = null
+var _world_name_edit: LineEdit = null
 
 
 ## SoundManager autoload 访问器（--script 测试模式下全局标识符不可编译，走节点查找）
 func _sm():
 	return get_node_or_null("/root/SoundManager")
+
+
+## 当前场景下的 GameManager（世界名等游戏状态来源）
+func _game_manager() -> Node:
+	var scene := get_tree().current_scene
+	if scene == null:
+		return null
+	return scene.get_node_or_null("World")
 
 
 func _ready() -> void:
@@ -42,6 +51,7 @@ func _ready() -> void:
 		_panels[page_name] = page.get_node_or_null("PanelContainer") as PanelContainer
 	_wire_corner_panels()
 	_wire_home()
+	_wire_game()
 	_wire_audio()
 	_wire_display()
 	_load_cfg_into_controls()
@@ -128,6 +138,39 @@ func _bind_menu_button(vbox: Node, path: NodePath, page_name: StringName) -> voi
 	if btn != null:
 		btn.pressed.connect(_show_page.bind(page_name))
 		btn.pressed.connect(_play_click)
+
+
+# ==================== Game ====================
+
+func _wire_game() -> void:
+	_world_name_edit = get_node_or_null("Game/PanelContainer/HBoxContainer/LineEdit") as LineEdit
+	if _world_name_edit == null:
+		push_warning("settings: 缺世界名输入框")
+		return
+	_sync_world_name_from_state()
+	_world_name_edit.text_changed.connect(_on_world_name_changed)
+	var gm := _game_manager()
+	if gm != null:
+		gm.state.changed.connect(_sync_world_name_from_state)
+
+
+func _sync_world_name_from_state() -> void:
+	if _world_name_edit == null:
+		return
+	var gm := _game_manager()
+	if gm == null:
+		return
+	var state_name: String = gm.state.world_name
+	if _world_name_edit.text != state_name:
+		_world_name_edit.text = state_name
+
+
+func _on_world_name_changed(new_text: String) -> void:
+	var gm := _game_manager()
+	if gm == null:
+		return
+	if gm.state.world_name != new_text:
+		gm.state.set_world_name(new_text)
 
 
 func _play_click() -> void:

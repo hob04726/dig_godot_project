@@ -25,7 +25,7 @@ func _init() -> void:
 	var gained := st.apply_ascension()
 	_check(gained.to_int() == 10, "首次升华领取差值 10 点")
 	_check(st.coins.is_zero(), "升华后金币清零")
-	_check(st.permanent_multiplier().eq(BigNumber.from_float(1.1)), "已领取 10 点 → 永久倍率 1.1")
+	_check(st.permanent_multiplier().eq(BigNumber.from_float(1.1)), "已领取 10 点 → 声望倍率 1.1")
 	_check(st.run_version == 1, "升华后 run_version = 1")
 
 	# 继续赚到累计 9e9 → 总点数 20，第二次升华只领差值 10（Cookie Clicker 差分机制）
@@ -34,6 +34,17 @@ func _init() -> void:
 	var gained2 := st.apply_ascension()
 	_check(gained2.to_int() == 10, "第二次升华只领差值 10")
 	_check(st.coins.is_zero(), "第二次升华后金币清零")
+
+	# --- 下一升华点所需金币 ---
+	var st6 := GameState.new()
+	_check(Prestige.coins_to_next_point(st6.lifetime_coins).eq(BigNumber.from_int(1_000_000)), "0 累计时还需 1e6 到 1 点")
+	st6.add_coins(BigNumber.from_int(500_000))
+	_check(Prestige.coins_to_next_point(st6.lifetime_coins).eq(BigNumber.from_int(500_000)), "500k 时还需 500k")
+	st6.add_coins(BigNumber.from_int(500_000))
+	# 1e6 时正好 1 点，下一点阈值 8e6
+	_check(Prestige.coins_to_next_point(st6.lifetime_coins).eq(BigNumber.from_int(7_000_000)), "1e6 时还需 7e6 到 2 点")
+	st6.add_coins(BigNumber.from_int(7_000_000))
+	_check(Prestige.coins_to_next_point(st6.lifetime_coins).eq(BigNumber.from_int(19_000_000)), "8e6 时还需 19e6 到 3 点")
 
 	# --- 升华点购买 ---
 	_check(st.record_ascension_purchase(&"meta_legacy", 3) == true, "花 3 点买升华天赋")
@@ -45,6 +56,17 @@ func _init() -> void:
 	st.record_talent_purchase(&"unlock_coal")
 	_check(st.has_talent(&"unlock_coal"), "普通天赋已记录")
 	_check(not st.has_talent(&"unlock_iron"), "未买天赋不存在")
+
+	# --- 世界名 ---
+	_check(st.world_name == "小世界", "默认世界名")
+	st.set_world_name("黄金乡")
+	_check(st.world_name == "黄金乡", "改名生效")
+	var name_changed_count := {"v": 0}
+	st.changed.connect(func() -> void: name_changed_count.v += 1)
+	st.set_world_name("黄金乡")
+	_check(name_changed_count.v == 0, "同名不改不触发 changed")
+	st.set_world_name("水晶洞")
+	_check(name_changed_count.v == 1, "改名触发 changed")
 
 	# --- 序列化 round-trip ---
 	st.add_coins(BigNumber.from_int(77))   # 升华后新一轮的金币，验证存档
@@ -60,6 +82,7 @@ func _init() -> void:
 	_check(st2.get_ore_mined(&"coal") == 2, "存档 ore_mined 一致")
 	_check(st2.has_talent(&"unlock_coal"), "存档普通天赋一致")
 	_check(st2.has_ascension(&"meta_legacy"), "存档升华天赋一致")
+	_check(st2.world_name == "水晶洞", "存档世界名一致")
 
 	# --- 升华保留（永久槽） ---
 	var st5 := GameState.new()

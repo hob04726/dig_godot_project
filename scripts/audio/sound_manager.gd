@@ -38,7 +38,7 @@ const MUSIC_VOLUME_DB := -10.0  # BGM 垫底，别盖过音效
 ## 单个音效的音量补偿（dB）：素材本身响度不均衡，在此统一校平。
 ## broke_a_ore 素材峰值偏高 → 降；below_button_select 素材接近静音 → 大幅补。
 const SFX_VOLUME_OFFSET := {
-	&"broke_a_ore": -8.0,
+	&"broke_a_ore": -16.0,   # 矿石破坏音效明显偏响，再压低点
 	&"below_button_select": 20.0,
 	&"place_block": 10.0,    # 素材 RMS 比 dig 低约 10dB，拉平
 	&"remove_block": 8.0,

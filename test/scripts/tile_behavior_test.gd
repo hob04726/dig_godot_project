@@ -9,7 +9,6 @@ var _failures := 0
 func _init() -> void:
 	var dirt := load("res://defs/tiles/dirt.tres") as TileDef
 	var water := load("res://defs/tiles/water.tres") as TileDef
-	var volcano := load("res://defs/tiles/volcano_stable.tres") as TileDef
 	var upgrade := load("res://defs/tiles/upgrade.tres") as TileDef
 	var stone := load("res://defs/tiles/stone.tres") as TileDef
 	var grass := load("res://defs/tiles/grass.tres") as TileDef
@@ -17,15 +16,25 @@ func _init() -> void:
 	var push := load("res://defs/tiles/push.tres") as TileDef
 	var pull := load("res://defs/tiles/pull.tres") as TileDef
 	var fire := load("res://defs/tiles/fire.tres") as TileDef
+	var conveyor_ld := load("res://defs/tiles/conveyor_belt_leftdown.tres") as TileDef
+	var conveyor_lu := load("res://defs/tiles/conveyor_belt_leftup.tres") as TileDef
+	var conveyor_rd := load("res://defs/tiles/conveyor_belt_rightdown.tres") as TileDef
+	var conveyor_ru := load("res://defs/tiles/conveyor_belt_rightup.tres") as TileDef
+	var tnt_spawn := load("res://defs/tiles/tnt_spawn.tres") as TileDef
+	var tnt_tile := load("res://defs/tiles/tnt.tres") as TileDef
 	var gold := load("res://defs/ores/gold.tres") as OreDef
+	var tnt_ore := load("res://defs/ores/tnt.tres") as OreDef
 
 	# --- 定义行为已配置 ---
 	_check(water.behavior == TileDef.Behavior.WATER, "water 行为配置")
-	_check(volcano.behavior == TileDef.Behavior.VOLCANO, "volcano 行为配置")
 	_check(spawn.behavior == TileDef.Behavior.SPAWN and spawn.spawn_ore_id == &"crystal", "spawn 行为配置")
 	_check(pull.behavior == TileDef.Behavior.PULL, "pull 行为配置")
 	_check(fire.behavior == TileDef.Behavior.FIRE, "fire 行为配置")
 	_check(upgrade.behavior == TileDef.Behavior.UPGRADE, "upgrade 行为配置")
+	_check(conveyor_ld.behavior == TileDef.Behavior.CONVEYOR_BELT_LEFTDOWN, "conveyor_leftdown 行为配置")
+	_check(conveyor_ru.behavior == TileDef.Behavior.CONVEYOR_BELT_RIGHTUP, "conveyor_rightup 行为配置")
+	_check(tnt_spawn.behavior == TileDef.Behavior.TNT_SPAWN and tnt_spawn.spawn_ore_id == &"tnt", "tnt_spawn 行为配置")
+	_check(tnt_tile.behavior == TileDef.Behavior.TNT and tnt_tile.spawn_ore_id == &"tnt", "tnt 地皮行为配置")
 
 	# --- 水：落地即沉没，不给金币 ---
 	var grid := _base_grid(dirt)
@@ -41,18 +50,6 @@ func _init() -> void:
 	_check(not grid.ores.has(Vector2i(0, 2)), "水格矿落地后沉没")
 	_check(counts["rewarded"] == 1 and counts["discarded"] == 0, "沉没走 ore_removed（给金币）")
 	_check(counts["ratio"] == 0.1, "水沉没只返还价值 10%")
-
-	# --- 火山：不能承载矿 + 攻击四邻 ---
-	grid = _base_grid(dirt)
-	_set_tile(grid, Vector2i(0, 2), volcano)
-	_check(not grid.try_spawn_ore(Vector2i(0, 2), _make_gold_ore(gold, Vector2i(0, 2))).is_ok(), "火山格不能生成矿")
-	var neighbor := Vector2i(1, 2)
-	_set_tile(grid, neighbor, dirt)
-	var victim := _make_gold_ore(gold, neighbor)
-	_check(grid.try_spawn_ore(neighbor, victim).is_ok(), "火山邻格生成矿")
-	var before_hp := victim.hp
-	grid.tick(volcano.tick_interval)
-	_check(victim.hp < before_hp and grid.ores.has(neighbor), "火山对邻矿造成伤害且未打死")
 
 	# --- 升级台：每几秒升一级 ---
 	grid = _base_grid(dirt)
@@ -79,55 +76,132 @@ func _init() -> void:
 	grid.try_spawn_ore(grass_cell, grass_ore)
 	_check(grid.hit_damage(grass_ore, 10) > 10, "草地格矿受到伤害更高")
 
-	# --- spawn：空时请求生成水晶，有矿时不发 ---
+	# --- grass 影响邻接格：邻接 dirt 上的矿也受伤害更高 ---
+	grid = _base_grid(dirt)
+	_set_tile(grid, Vector2i(0, 1), grass)
+	var adjacent_grass_ore := _make_gold_ore(gold, Vector2i.ZERO)
+	grid.try_spawn_ore(Vector2i.ZERO, adjacent_grass_ore)
+	var base_dmg := grid.hit_damage(adjacent_grass_ore, 10)
+	_check(base_dmg > 10, "草地影响邻接 dirt 格，矿受到伤害更高")
+
+	# --- stone 影响邻接格：邻接 dirt 上的矿结算价值更高 ---
+	grid = _base_grid(dirt)
+	_set_tile(grid, Vector2i(0, 1), stone)
+	var adjacent_stone_ore := _make_gold_ore(gold, Vector2i.ZERO)
+	grid.try_spawn_ore(Vector2i.ZERO, adjacent_stone_ore)
+	_check(grid.settle_value(adjacent_stone_ore) > adjacent_stone_ore.get_value(), "石头影响邻接 dirt 格，矿结算价值更高")
+
+	# --- upgrade 影响邻接格：邻接 dirt 上的矿也被升级 ---
+	grid = _base_grid(dirt)
+	_set_tile(grid, Vector2i(0, 1), upgrade)
+	var adjacent_up_ore := _make_gold_ore(gold, Vector2i.ZERO)
+	grid.try_spawn_ore(Vector2i.ZERO, adjacent_up_ore)
+	grid.tick(upgrade.tick_interval)
+	_check(adjacent_up_ore.level == 2, "升级台影响邻接 dirt 格，矿升到 2 级")
+
+	# --- spawn：自身及邻接空地块请求生成水晶，有矿时不发 ---
 	grid = _base_grid(dirt)
 	var spawn_cell := Vector2i(0, 1)
 	_set_tile(grid, spawn_cell, spawn)
 	var requests: Array = []
 	grid.tile_request_spawn.connect(func(c: Vector2i, id: StringName) -> void: requests.append([c, id]))
 	grid.tick(spawn.tick_interval)
-	_check(requests.size() == 1 and requests[0][1] == &"crystal", "spawn 空时请求生成水晶")
+	# (0,1) 自身 + (0,0) 邻接 dirt 共 2 格空着
+	_check(requests.size() == 2, "spawn 空时请求自身及邻接格（共 2 个）")
+	for r in requests:
+		_check(r[1] == &"crystal", "spawn 请求矿石为 crystal")
 	var spawn_ore := _make_gold_ore(gold, spawn_cell)
 	grid.try_spawn_ore(spawn_cell, spawn_ore)
 	requests.clear()
 	grid.tick(spawn.tick_interval)
-	_check(requests.is_empty(), "spawn 有矿时不再请求")
+	_check(requests.size() == 1 and requests[0][0] == Vector2i(0, 0), "spawn 有矿时只请求剩余空邻接格")
 
-	# --- push：把上方矿推到邻居 ---
+	# --- push：把相邻矿向外推一格 ---
 	grid = _base_grid(dirt)
 	var push_cell := Vector2i(0, 1)
 	_set_tile(grid, push_cell, push)
-	var push_ore := _make_gold_ore(gold, push_cell)
-	grid.try_spawn_ore(push_cell, push_ore)
-	grid.tick(push.tick_interval)
-	_check(not grid.ores.has(push_cell) and grid.ores.size() == 1, "传送带把矿推到相邻格")
-
-	# --- push：四个方向都被矿堵住时不推 ---
-	grid = _base_grid(dirt)
-	push_cell = Vector2i(0, 1)
-	_set_tile(grid, push_cell, push)
-	_set_tile(grid, Vector2i(1, 1), dirt)
-	_set_tile(grid, Vector2i(-1, 1), dirt)
 	_set_tile(grid, Vector2i(0, 2), dirt)
-	grid.try_spawn_ore(Vector2i(1, 1), _make_gold_ore(gold, Vector2i(1, 1)))
-	grid.try_spawn_ore(Vector2i(-1, 1), _make_gold_ore(gold, Vector2i(-1, 1)))
-	grid.try_spawn_ore(Vector2i(0, 2), _make_gold_ore(gold, Vector2i(0, 2)))
-	grid.try_spawn_ore(Vector2i(0, 0), _make_gold_ore(gold, Vector2i(0, 0)))
-	var blocked_ore := _make_gold_ore(gold, push_cell)
-	grid.try_spawn_ore(push_cell, blocked_ore)
+	_set_tile(grid, Vector2i(0, 3), dirt)
+	var push_ore := _make_gold_ore(gold, Vector2i(0, 2))
+	grid.try_spawn_ore(Vector2i(0, 2), push_ore)
 	grid.tick(push.tick_interval)
-	_check(grid.ores.has(push_cell), "四邻都有矿时不推")
+	_check(not grid.ores.has(Vector2i(0, 2)) and grid.ores.has(Vector2i(0, 3)), "push 把相邻矿向外推一格")
 
-	# --- push 推入水：沉没消失 ---
+	# --- push：目标被堵住时不推 ---
 	grid = _base_grid(dirt)
 	push_cell = Vector2i(0, 1)
 	_set_tile(grid, push_cell, push)
-	_set_tile(grid, Vector2i(0, 2), water)
-	grid.try_spawn_ore(Vector2i(0, 0), _make_gold_ore(gold, Vector2i(0, 0)))  # 堵住另一方向
-	var sink_push_ore := _make_gold_ore(gold, push_cell)
-	grid.try_spawn_ore(push_cell, sink_push_ore)
+	_set_tile(grid, Vector2i(0, 2), dirt)
+	_set_tile(grid, Vector2i(0, 3), dirt)
+	grid.try_spawn_ore(Vector2i(0, 3), _make_gold_ore(gold, Vector2i(0, 3)))
+	var blocked_ore := _make_gold_ore(gold, Vector2i(0, 2))
+	grid.try_spawn_ore(Vector2i(0, 2), blocked_ore)
 	grid.tick(push.tick_interval)
-	_check(not grid.ores.has(push_cell), "传送带把矿推入水中沉没")
+	_check(grid.ores.has(Vector2i(0, 2)), "push 目标被堵住时不推")
+
+	# --- push 推入水：相邻矿沉没 ---
+	grid = _base_grid(dirt)
+	push_cell = Vector2i(0, 1)
+	_set_tile(grid, push_cell, push)
+	_set_tile(grid, Vector2i(0, 2), dirt)
+	_set_tile(grid, Vector2i(0, 3), water)
+	var sink_push_ore := _make_gold_ore(gold, Vector2i(0, 2))
+	grid.try_spawn_ore(Vector2i(0, 2), sink_push_ore)
+	grid.tick(push.tick_interval)
+	_check(not grid.ores.has(Vector2i(0, 2)), "push 把相邻矿推入水中沉没")
+
+	# --- 定向传送带：按指定方向推动矿石 ---
+	grid = _base_grid(dirt)
+	var conv_cell := Vector2i(0, 1)
+	_set_tile(grid, conv_cell, conveyor_ru)  # rightup = grid (0, -1)
+	_set_tile(grid, Vector2i(0, 0), dirt)
+	var conv_ore := _make_gold_ore(gold, conv_cell)
+	grid.try_spawn_ore(conv_cell, conv_ore)
+	grid.tick(conveyor_ru.tick_interval)
+	_check(not grid.ores.has(conv_cell) and grid.ores.has(Vector2i(0, 0)), "定向传送带把矿推向右上")
+
+	# --- 定向传送带：目标被堵住时不推 ---
+	grid = _base_grid(dirt)
+	conv_cell = Vector2i(0, 1)
+	_set_tile(grid, conv_cell, conveyor_ru)
+	grid.try_spawn_ore(Vector2i(0, 0), _make_gold_ore(gold, Vector2i(0, 0)))
+	var blocked_conv_ore := _make_gold_ore(gold, conv_cell)
+	grid.try_spawn_ore(conv_cell, blocked_conv_ore)
+	grid.tick(conveyor_ru.tick_interval)
+	_check(grid.ores.has(conv_cell), "目标被堵住时传送带不推")
+
+	# --- tnt_spawn：自身及邻接空地块请求生成 TNT，有矿时只发剩余空邻接格 ---
+	grid = _base_grid(dirt)
+	var tnt_spawn_cell := Vector2i(0, 1)
+	_set_tile(grid, tnt_spawn_cell, tnt_spawn)
+	var tnt_requests: Array = []
+	grid.tile_request_spawn.connect(func(c: Vector2i, id: StringName) -> void: tnt_requests.append([c, id]))
+	grid.tick(tnt_spawn.tick_interval)
+	_check(tnt_requests.size() == 2, "tnt_spawn 空时请求自身及邻接格（共 2 个）")
+	for r in tnt_requests:
+		_check(r[1] == &"tnt", "tnt_spawn 请求矿石为 tnt")
+	var tnt_ore_inst := OreBlock.new()
+	tnt_ore_inst.setup_ore(tnt_ore, 1, tnt_spawn_cell)
+	tnt_ore_inst.has_landed = true
+	grid.try_spawn_ore(tnt_spawn_cell, tnt_ore_inst)
+	tnt_requests.clear()
+	grid.tick(tnt_spawn.tick_interval)
+	_check(tnt_requests.size() == 1 and tnt_requests[0][0] == Vector2i(0, 0), "tnt_spawn 有矿时只请求剩余空邻接格")
+
+	# --- tnt 地皮：不会主动生成 TNT；只承载 TNT 矿 ---
+	grid = _base_grid(dirt)
+	var tnt_tile_cell := Vector2i(0, 1)
+	_set_tile(grid, tnt_tile_cell, tnt_tile)
+	var tnt_tile_requests: Array = []
+	grid.tile_request_spawn.connect(func(c: Vector2i, id: StringName) -> void: tnt_tile_requests.append([c, id]))
+	grid.tick(tnt_tile.tick_interval)
+	_check(tnt_tile_requests.is_empty(), "tnt 地皮不主动生成 TNT")
+	var tnt_on_tile := OreBlock.new()
+	tnt_on_tile.setup_ore(tnt_ore, 1, tnt_tile_cell)
+	tnt_on_tile.has_landed = true
+	_check(grid.try_spawn_ore(tnt_tile_cell, tnt_on_tile).is_ok(), "TNT 地皮可承载 TNT 矿")
+	var normal_ore := _make_gold_ore(gold, tnt_tile_cell)
+	_check(not grid.try_spawn_ore(tnt_tile_cell, normal_ore).is_ok(), "TNT 地皮不能承载普通矿")
 
 	# --- pull：把邻格矿吸到自己格 ---
 	grid = _base_grid(dirt)

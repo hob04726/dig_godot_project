@@ -16,6 +16,12 @@ extends Node2D
 @export var border_width := 1.0
 @export var corner_radius := 28.0      # 每个格子框线的圆角半径（世界单位）
 
+## 重置节点中心的圆形遮罩：越靠近中心透明度越低，避免格子框线盖住 reset 球。
+@export var center_mask_enabled := true
+@export var center_mask_position := Vector2.ZERO
+@export var center_mask_radius := 140.0
+@export var center_mask_feather := 0.35  # 0=硬边，越大边缘过渡越宽
+
 var _stylebox: StyleBoxFlat = null
 
 
@@ -33,6 +39,19 @@ func _process(_delta: float) -> void:
 	queue_redraw()
 
 
+## 把鼠标 reveal 后的基础透明度再用中心遮罩压一下：越靠近 center_mask_position 越透明。
+func _apply_center_mask(alpha: float, world_pos: Vector2) -> float:
+	if not center_mask_enabled or center_mask_radius <= 0.0:
+		return alpha
+	var d := world_pos.distance_to(center_mask_position)
+	if d >= center_mask_radius:
+		return alpha
+	# 在遮罩半径内：中心完全透明，边缘按 feather 柔和恢复
+	var inner := center_mask_radius * (1.0 - center_mask_feather)
+	var factor := clampf((d - inner) / (center_mask_radius - inner), 0.0, 1.0)
+	return alpha * factor
+
+
 func _draw() -> void:
 	if grid_bounds.size == Vector2i.ZERO or _stylebox == null:
 		return
@@ -46,12 +65,14 @@ func _draw() -> void:
 				continue              # 半径外：不画 = 透明 0
 			var t := clampf(1.0 - dist / reveal_radius, 0.0, 1.0)
 			var color := border_color
-			color.a = lerpf(0.0, max_alpha, t)
+			color.a = _apply_center_mask(lerpf(0.0, max_alpha, t), center)
+			if color.a <= 0.0:
+				continue
 			_stylebox.border_color = color   # 立即绘制，逐格改透明度安全
 			draw_style_box(_stylebox, Rect2(center - cell_size * 0.5, cell_size))
 	# 四个圆角框交汇处的空洞：精确填充"四条圆弧围成的曲边区域"本身，
 	# 而不是菱形——填充边界与框线圆弧完全重合，交汇处保持圆润、不出现直边/平角。
-	# 透明度沿用同一套鼠标距离衰减（按顶点到鼠标的距离算）
+	# 透明度沿用同一套鼠标距离衰减（按顶点到鼠标的距离算），并同样受中心遮罩影响。
 	const ARC_STEPS := 8   # 每条圆弧的采样段数
 	for c in grid_bounds.size.x - 1:
 		for r in grid_bounds.size.y - 1:
@@ -61,7 +82,9 @@ func _draw() -> void:
 				continue
 			var t := clampf(1.0 - dist / reveal_radius, 0.0, 1.0)
 			var color := border_color
-			color.a = lerpf(0.0, max_alpha, t)
+			color.a = _apply_center_mask(lerpf(0.0, max_alpha, t), vertex)
+			if color.a <= 0.0:
+				continue
 			var rad := corner_radius
 			# 四条弧的圆心 = 四个相邻格子各自的圆角圆心（顶点 ±rad 处）
 			var arc_defs := [

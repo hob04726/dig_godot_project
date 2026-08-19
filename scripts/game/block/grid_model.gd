@@ -24,6 +24,11 @@ const CARDINALS: Array[Vector2i] = [
 const DIAGONALS: Array[Vector2i] = [
 	Vector2i(1, 1), Vector2i(1, -1), Vector2i(-1, 1), Vector2i(-1, -1),
 ]
+## 影响邻接格的地皮效果范围：自身 + 四邻（升级台 / 石头 / 草地 / 稀有矿脉 / 水晶矿脉）
+const AREA_OFFSETS: Array[Vector2i] = [
+	Vector2i(0, 0),
+	Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
+]
 
 ## 地块群的锚点：最中间的地块，永远不可删除
 const CENTER_CELL := Vector2i.ZERO
@@ -38,6 +43,11 @@ var _tile_timers: Dictionary[Vector2i, float] = {}
 ## 组合根在加载后一次性推送（TILE_BEHAVIOR_UP 的运行时修改，不改共享 .tres）。
 ## 这是配置注入而非玩法写操作：不改变网格状态、不发 tile_changed。
 var tile_overrides: Dictionary[StringName, Dictionary] = {}
+
+## 本 tick 已升级过的矿石实例（防止多个升级台叠加导致同一矿连升多级）
+var _upgraded_this_tick: Dictionary[int, bool] = {}
+## 本 tick 已请求生成矿石的格子（防止多个 spawn 地皮同一帧往同一格重复请求）
+var _spawned_this_tick: Dictionary[Vector2i, bool] = {}
 
 
 # ==================== 地皮数据 ====================
@@ -89,10 +99,10 @@ func try_spawn_ore(cell: Vector2i, ore: OreBlock) -> MutResult:
 		return MutResult.fail(MutResult.Code.NO_CELL, "格子 %s 没有地皮" % cell)
 	if ores.has(cell):
 		return MutResult.fail(MutResult.Code.CELL_OCCUPIED, "格子 %s 已有矿石" % cell)
-	# 火山不允许落矿；水允许生成（落地时由 notify_ore_landed 沉没，做出"沉入水"的效果）
+	# TNT 地皮只允许承载 TNT 矿；水允许生成（落地时沉没）
 	var tile := get_tile_at(cell)
-	if tile.behavior == TileDef.Behavior.VOLCANO:
-		return MutResult.fail(MutResult.Code.CELL_OCCUPIED, "火山上不能承载矿石")
+	if tile != null and tile.behavior == TileDef.Behavior.TNT and ore.get_def().id != &"tnt":
+		return MutResult.fail(MutResult.Code.CELL_OCCUPIED, "TNT 地皮上只能承载 TNT")
 	ores[cell] = ore
 	ore.cell = cell
 	# 新矿入场：重置该格的周期行为计时，让首次效果从完整间隔开始
@@ -109,7 +119,13 @@ func try_move_ore(from_cell: Vector2i, to_cell: Vector2i) -> MutResult:
 	if ores.has(to_cell):
 		return MutResult.fail(MutResult.Code.CELL_OCCUPIED, "格子 %s 已有矿石" % to_cell)
 	if _is_hazard_cell(to_cell):
-		return MutResult.fail(MutResult.Code.CELL_OCCUPIED, "目标 %s 是水/火山，无法移动" % to_cell)
+		return MutResult.fail(MutResult.Code.CELL_OCCUPIED, "目标 %s 是危险格，无法移动" % to_cell)
+	# TNT 地皮只能由 TNT 矿进入
+	var target_tile := get_tile_at(to_cell)
+	if target_tile != null and target_tile.behavior == TileDef.Behavior.TNT:
+		var moving_ore := ores[from_cell]
+		if moving_ore.get_def().id != &"tnt":
+			return MutResult.fail(MutResult.Code.CELL_OCCUPIED, "目标 %s 是 TNT 地皮，只能进入 TNT" % to_cell)
 	var ore := ores[from_cell]
 	ores.erase(from_cell)
 	ores[to_cell] = ore
@@ -268,6 +284,8 @@ func _has_tile(cell: Vector2i) -> bool:
 ## 水/火山是"危险格"：矿石无法停留（落上即消失，自动落矿与位移目标也排除）。
 
 func tick(delta: float) -> void:
+	_upgraded_this_tick.clear()
+	_spawned_this_tick.clear()
 	for cell: Vector2i in cells.keys():
 		var tile := get_tile_at(cell)
 		if tile == null or not _is_periodic(tile.behavior):
@@ -292,14 +310,12 @@ func get_tile_at(cell: Vector2i) -> TileDef:
 
 ## 结算价值（stone 地皮倍率 + 天赋 override）——GameManager 发金币时用
 func settle_value(ore: OreBlock) -> int:
-	var tile := get_tile_at(ore.cell)
-	return int(roundf(ore.get_value() * _effective_value_multiplier(tile)))
+	return int(roundf(ore.get_value() * effective_value_multiplier(ore.cell)))
 
 
 ## 挖矿伤害（grass 地皮倍率 + 天赋 override）——GameManager 攻击时用
 func hit_damage(ore: OreBlock, base_damage: int) -> int:
-	var tile := get_tile_at(ore.cell)
-	return int(roundf(base_damage * _effective_damage_multiplier(tile)))
+	return int(roundf(base_damage * effective_damage_multiplier(ore.cell)))
 
 
 # ==================== 地块行为参数（含天赋 override） ====================
@@ -336,17 +352,35 @@ func _effective_sink_refund(tile: TileDef) -> float:
 	return float(_override_param(tile, &"sink_refund_ratio", tile.sink_refund_ratio if tile != null else 0.1))
 
 
-## per-cell 公开只读（GameManager / 测试用）
+## per-cell 公开只读（GameManager / 测试用）。
+## 石头（STONE）的价值倍率影响自身及四邻，多个石头倍率相乘。
 func effective_value_multiplier(cell: Vector2i) -> float:
-	return _effective_value_multiplier(get_tile_at(cell))
+	var mult := 1.0
+	for offset in AREA_OFFSETS:
+		var tile := get_tile_at(cell + offset)
+		if tile != null and tile.behavior == TileDef.Behavior.STONE:
+			mult *= _effective_value_multiplier(tile)
+	return mult
 
 
+## 草地（GRASS）的伤害倍率影响自身及四邻，多个草地倍率相乘。
 func effective_damage_multiplier(cell: Vector2i) -> float:
-	return _effective_damage_multiplier(get_tile_at(cell))
+	var mult := 1.0
+	for offset in AREA_OFFSETS:
+		var tile := get_tile_at(cell + offset)
+		if tile != null and tile.behavior == TileDef.Behavior.GRASS:
+			mult *= _effective_damage_multiplier(tile)
+	return mult
 
 
+## 稀有矿脉（RARITY）的 min_rarity 影响自身及四邻，取最大值。
 func effective_min_rarity(cell: Vector2i) -> int:
-	return _effective_min_rarity(get_tile_at(cell))
+	var min_r := 1
+	for offset in AREA_OFFSETS:
+		var tile := get_tile_at(cell + offset)
+		if tile != null and tile.behavior == TileDef.Behavior.RARITY:
+			min_r = maxi(min_r, _effective_min_rarity(tile))
+	return min_r
 
 
 func _advance_behavior(cell: Vector2i, tile: TileDef, delta: float) -> void:
@@ -358,8 +392,6 @@ func _advance_behavior(cell: Vector2i, tile: TileDef, delta: float) -> void:
 		return
 	_tile_timers[cell] = 0.0
 	match tile.behavior:
-		TileDef.Behavior.VOLCANO:
-			_volcano_tick(cell, tile)
 		TileDef.Behavior.UPGRADE:
 			_upgrade_tick(cell)
 		TileDef.Behavior.SPAWN:
@@ -370,56 +402,103 @@ func _advance_behavior(cell: Vector2i, tile: TileDef, delta: float) -> void:
 			_pull_tick(cell)
 		TileDef.Behavior.FIRE:
 			_fire_tick(cell, tile)
+		TileDef.Behavior.CONVEYOR_BELT_LEFTDOWN, TileDef.Behavior.CONVEYOR_BELT_LEFTUP, \
+		TileDef.Behavior.CONVEYOR_BELT_RIGHTDOWN, TileDef.Behavior.CONVEYOR_BELT_RIGHTUP:
+			_conveyor_tick(cell, tile)
+		TileDef.Behavior.TNT_SPAWN:
+			_tnt_spawn_tick(cell, tile)
 
 
-## 火山：攻击四邻已落地的矿，打死的给金币
-func _volcano_tick(cell: Vector2i, tile: TileDef) -> void:
-	for dir in CARDINALS:
-		var target := cell + dir
+## 升级台：给自身及四邻已落地的矿升一级（每个矿石每 tick 最多升一次）
+func _upgrade_tick(cell: Vector2i) -> void:
+	for offset in AREA_OFFSETS:
+		var target := cell + offset
 		var ore := ores.get(target) as OreBlock
 		if ore == null or not ore.has_landed:
 			continue
-		if ore.take_damage(int(_effective_damage(tile))):
-			remove_ore(target)
-
-
-## 升级台：给上方已落地的矿升一级（small -> large -> huge）
-func _upgrade_tick(cell: Vector2i) -> void:
-	var ore := ores.get(cell) as OreBlock
-	if ore != null and ore.has_landed:
+		if _upgraded_this_tick.has(ore.get_instance_id()):
+			continue
 		ore.upgrade_level()
+		_upgraded_this_tick[ore.get_instance_id()] = true
 
 
-## 水晶矿脉：自身空着时请求生成矿石（实例化交给视图层）
+## 水晶矿脉：自身及四邻有空地块时请求生成矿石（实例化交给视图层）
 func _spawn_tick(cell: Vector2i, tile: TileDef) -> void:
-	if ores.has(cell):
-		return
-	tile_request_spawn.emit(cell, tile.spawn_ore_id)
+	for offset in AREA_OFFSETS:
+		var target := cell + offset
+		if not cells.has(target) or ores.has(target) or _spawned_this_tick.has(target):
+			continue
+		_spawned_this_tick[target] = true
+		tile_request_spawn.emit(target, tile.spawn_ore_id)
 
 
-## 传送带：把上方已落地的矿随机推向四邻；水也算目标（推进水里会沉没），
-## 火山与没有地块的位置不算；四个方向都动不了就不推
+## 目标格能否作为 push/conveyor 的落点：需要地皮，且不是 TNT（水允许，推进去会沉没）
+func _is_push_target_blocked(cell: Vector2i) -> bool:
+	var tile := get_tile_at(cell)
+	if tile == null:
+		return true
+	return tile.behavior == TileDef.Behavior.TNT
+
+
+## push 地皮：把四邻已落地的 ore 向外（远离 push）推一格；
+## 水可作为目标（推进去会沉没），TNT/无地皮不能作为目标。
 func _push_tick(cell: Vector2i) -> void:
+	for dir in CARDINALS:
+		var neighbor := cell + dir
+		var ore := ores.get(neighbor) as OreBlock
+		if ore == null or not ore.has_landed:
+			continue
+		# 目标 = 邻居再沿同一方向走一格，即远离 push 的方向
+		var target := neighbor + dir
+		if ores.has(target):
+			continue
+		if _is_push_target_blocked(target):
+			continue
+		if _is_water(target):
+			remove_ore(neighbor, _effective_sink_refund(get_tile_at(target)))
+		else:
+			try_move_ore(neighbor, target)
+
+
+## 定向传送带：把上方已落地的矿按固定方向推一格；
+## 目标有水则沉没，TNT/无地皮/有矿则不动。
+func _conveyor_tick(cell: Vector2i, tile: TileDef) -> void:
 	var ore := ores.get(cell) as OreBlock
 	if ore == null or not ore.has_landed:
 		return
-	var targets: Array[Vector2i] = []
-	for dir in CARDINALS:
-		var target := cell + dir
-		if ores.has(target):
-			continue
-		var tile := get_tile_at(target)
-		if tile == null or tile.behavior == TileDef.Behavior.VOLCANO:
-			continue
-		targets.append(target)
-	if targets.is_empty():
+	var dir := _conveyor_direction(tile.behavior)
+	var target := cell + dir
+	if ores.has(target):
 		return
-	var chosen: Vector2i = targets.pick_random()
-	if _is_hazard_cell(chosen):
-		# 推入水：沉没，返还比例走天赋 override（可高于默认 10%）
-		remove_ore(cell, _effective_sink_refund(get_tile_at(chosen)))
+	if _is_push_target_blocked(target):
+		return
+	if _is_water(target):
+		remove_ore(cell, _effective_sink_refund(get_tile_at(target)))
 	else:
-		try_move_ore(cell, chosen)
+		try_move_ore(cell, target)
+
+
+func _conveyor_direction(behavior: TileDef.Behavior) -> Vector2i:
+	match behavior:
+		TileDef.Behavior.CONVEYOR_BELT_LEFTDOWN:
+			return Vector2i(0, 1)
+		TileDef.Behavior.CONVEYOR_BELT_LEFTUP:
+			return Vector2i(-1, 0)
+		TileDef.Behavior.CONVEYOR_BELT_RIGHTDOWN:
+			return Vector2i(1, 0)
+		TileDef.Behavior.CONVEYOR_BELT_RIGHTUP:
+			return Vector2i(0, -1)
+	return Vector2i.ZERO
+
+
+## TNT 生成器：自身及四邻有空地块时请求生成 TNT（实例化交给视图层）
+func _tnt_spawn_tick(cell: Vector2i, tile: TileDef) -> void:
+	for offset in AREA_OFFSETS:
+		var target := cell + offset
+		if not cells.has(target) or ores.has(target) or _spawned_this_tick.has(target):
+			continue
+		_spawned_this_tick[target] = true
+		tile_request_spawn.emit(target, tile.spawn_ore_id)
 
 
 ## 磁吸：自身空着时把邻格已落地的矿吸过来
@@ -448,17 +527,20 @@ func _fire_tick(cell: Vector2i, tile: TileDef) -> void:
 
 func _is_periodic(behavior: TileDef.Behavior) -> bool:
 	return behavior in [
-		TileDef.Behavior.VOLCANO, TileDef.Behavior.UPGRADE, TileDef.Behavior.SPAWN,
+		TileDef.Behavior.UPGRADE, TileDef.Behavior.SPAWN,
 		TileDef.Behavior.PUSH, TileDef.Behavior.PULL, TileDef.Behavior.FIRE,
+		TileDef.Behavior.CONVEYOR_BELT_LEFTDOWN, TileDef.Behavior.CONVEYOR_BELT_LEFTUP,
+		TileDef.Behavior.CONVEYOR_BELT_RIGHTDOWN, TileDef.Behavior.CONVEYOR_BELT_RIGHTUP,
+		TileDef.Behavior.TNT_SPAWN,
 	]
 
 
-## 水/火山：矿石无法停留的格子（没有地块也算）
+## 水：矿石无法停留的格子（没有地块也算）。TNT 地皮允许承载 TNT 矿，不算危险格。
 func _is_hazard_cell(cell: Vector2i) -> bool:
 	var tile := get_tile_at(cell)
 	if tile == null:
 		return true
-	return tile.behavior == TileDef.Behavior.WATER or tile.behavior == TileDef.Behavior.VOLCANO
+	return tile.behavior == TileDef.Behavior.WATER
 
 
 func _is_water(cell: Vector2i) -> bool:

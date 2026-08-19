@@ -64,6 +64,7 @@ var _alpha_tween: Tween = null
 var _wiggle_timer: Timer = null
 
 @onready var icon_sprite: Sprite2D = $Icon
+@onready var orb_sprite: Sprite2D = $OrbSprite
 
 
 func _ready() -> void:
@@ -86,9 +87,18 @@ func setup(def: TalentDef) -> void:
 	ascension_prerequisite_id = def.ascension_prerequisite_id
 	unlock_condition = def.unlock_condition
 	icon_sprite = $Icon as Sprite2D
+	orb_sprite = $OrbSprite as Sprite2D
 	if def.icon != null:
 		icon_sprite.texture = def.icon
 	_bake_icon()
+	if effect_type == "PRESTIGE_RESET":
+		icon_sprite.hide()
+		orb_sprite.show()
+		_ensure_orb_texture()
+		z_index = 1   # 确保球缸画在网格边框（z_index 0）之上
+	else:
+		icon_sprite.show()
+		orb_sprite.hide()
 	scale = Vector2.ONE * _base_scale()   # 初始 state=LOCKED → 0.7
 
 
@@ -108,6 +118,35 @@ func _bake_icon() -> void:
 	var baked := ImageTexture.create_from_image(img)
 	_baked_icon_cache[tex] = baked
 	icon_sprite.texture = baked
+
+
+## 如果 reset 球缸精灵没有贴图，创建一个纯白方块作为 shader 绘制载体
+func _ensure_orb_texture() -> void:
+	if orb_sprite == null:
+		return
+	if orb_sprite.texture != null:
+		return
+	var img := Image.create(256, 256, false, Image.FORMAT_RGBA8)
+	img.fill(Color.WHITE)
+	orb_sprite.texture = ImageTexture.create_from_image(img)
+
+
+## 设置 reset 球缸水位（0=空，1=满）
+func _set_orb_height(value: float) -> void:
+	if orb_sprite == null or orb_sprite.material == null:
+		return
+	var mat := orb_sprite.material as ShaderMaterial
+	mat.set_shader_parameter("height", value)
+
+
+## 根据累计金币更新 reset 球缸水位：显示当前升华点到下一点的进度，
+## 跨点后会自动归 0 重新计数。
+func set_orb_progress(lifetime_coins: BigNumber) -> void:
+	if effect_type != "PRESTIGE_RESET":
+		return
+	var root := lifetime_coins.div(BigNumber.from_int(1_000_000)).cbrt().to_float()
+	var progress := clampf(root - floorf(root), 0.0, 1.0)
+	_set_orb_height(progress)
 
 
 static func _get_outline_material() -> ShaderMaterial:
@@ -151,8 +190,10 @@ func set_hovered(h: bool) -> void:
 	if _hovered == h:
 		return
 	_hovered = h
-	# 悬停描边：挂上共享描边材质（白色外边框），离开摘掉
-	icon_sprite.material = _get_outline_material() if h else null
+	# 普通节点：挂上共享描边材质（白色外边框），离开摘掉
+	# reset 节点本身是个 shader 球缸，不能被 outline shader 覆盖，否则会变成白方块
+	if effect_type != "PRESTIGE_RESET":
+		icon_sprite.material = _get_outline_material() if h else null
 	_tween_scale(_desired_scale(), 0.15)
 	_tween_alpha(_desired_alpha(), 0.12)
 

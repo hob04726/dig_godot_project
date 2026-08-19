@@ -8,9 +8,9 @@
 [resource]
 script = ExtResource("1_def")
 rarity = 3
-spawn_weight = 5.0
-base_value = 40
-base_hp = 120
+spawn_weight = 4.0
+base_value = 1500
+base_hp = 800
 size_growth = 0.0
 id = &"diamond"
 display_name = "钻石矿"

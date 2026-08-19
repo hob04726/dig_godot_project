@@ -11,7 +11,7 @@ func _init() -> void:
 	db.load_all()
 	var normal := db.get_normal_defs()
 	var ascension := db.get_ascension_defs()
-	_check(normal.size() == 204, "普通天赋 204 条（实际 %d）" % normal.size())
+	_check(normal.size() == 260, "普通天赋 260 条（实际 %d）" % normal.size())
 	_check(ascension.size() == 6, "升华天赋 6 条（实际 %d）" % ascension.size())
 
 	# 表头名映射：关键字段
@@ -27,7 +27,7 @@ func _init() -> void:
 	var grass := _find(normal, &"terrain_grass_1")
 	_check(grass != null and grass.prerequisite_ids.size() == 2, "terrain_grass_1 双前置")
 	var fire := _find(normal, &"terrain_fire_1")
-	_check(fire != null and fire.target_ids.size() == 8, "terrain_fire_1 目标 8 矿（内嵌逗号解析）")
+	_check(fire != null and fire.target_ids.size() == 9, "terrain_fire_1 目标 9 矿（内嵌逗号解析）")
 
 	# 升华表
 	var legacy := _find(ascension, &"meta_legacy")

@@ -6,10 +6,10 @@ extends RefCounted
 ##   1. 所有写入走方法，成功后发 changed 信号；
 ##   2. 视图（GameManager/HUD/天赋树）只读订阅，禁止反向写回；
 ##   3. 读写分离：to_dict() 给存档，load_from_dict() 恢复。
-## 升华点语义（Cookie Clicker / Heavenly Chips 式，用户确认）：
+## 升华点与声望语义（Cookie Clicker / Heavenly Chips 式，用户确认）：
 ##   总升华点 = floor(cbrt(累计金币 / 1e6))，按全时间累计推导，永不减少；
 ##   每次升华领取"新总数 − 已领取"的差值，累进已领取数；
-##   每点永久 +1% 金币获取（按已领取点数；花掉的不降低永久等级）。
+##   每点升华点提供 +1% 金币获取（按已领取点数计入声望；花掉的不降低声望等级）。
 
 signal changed
 
@@ -30,6 +30,17 @@ var ore_mined: Dictionary[StringName, int] = {}
 var talent_purchases: Dictionary[StringName, bool] = {}
 ## 升华天赋购买（永久）：id -> true
 var ascension_purchases: Dictionary[StringName, bool] = {}
+## 世界名（显示在 NamePanel 与重置摄像头按钮悬浮提示）
+var world_name: String = "小世界"
+
+
+# ==================== 世界名 ====================
+
+func set_world_name(value: String) -> void:
+	if world_name == value:
+		return
+	world_name = value
+	changed.emit()
 
 
 # ==================== 经济 ====================
@@ -96,7 +107,7 @@ func ascension_points_available() -> BigNumber:
 	return ascension_points_earned.sub(BigNumber.from_int(ascension_points_spent))
 
 
-## 永久金币倍率：基于已领取点数（花掉的不降低永久等级）
+## 声望倍率：基于已领取升华点数（花掉的不降低声望等级）
 func permanent_multiplier() -> BigNumber:
 	return Prestige.multiplier_from_points(ascension_points_earned)
 
@@ -151,6 +162,7 @@ func to_dict() -> Dictionary:
 		"ore_mined": om,
 		"talents": tp,
 		"ascension_talents": ap,
+		"world_name": world_name,
 	}
 
 
@@ -170,4 +182,5 @@ func load_from_dict(data: Dictionary) -> void:
 	ascension_purchases.clear()
 	for key in data.get("ascension_talents", {}):
 		ascension_purchases[StringName(key)] = true
+	world_name = str(data.get("world_name", "小世界"))
 	changed.emit()

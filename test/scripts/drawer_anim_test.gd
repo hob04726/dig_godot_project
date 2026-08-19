@@ -49,7 +49,7 @@ func _init() -> void:
 
 	# 再点一次取消
 	gm.toggle_tile_selection(&"dirt")
-	await _sample(drawer, btn, 0.4, "取消(仍悬停)")
+	await _sample(drawer, btn, 0.6, "取消(仍悬停)")
 
 	drawer._on_btn_hover(0, false)
 	await _sample(drawer, btn, 0.4, "离开")

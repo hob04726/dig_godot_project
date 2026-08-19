@@ -1,0 +1,110 @@
+[gd_scene format=3 uid="uid://b5n4ob52l1fti"]
+
+[ext_resource type="Texture2D" uid="uid://b1p126cg3yhe1" path="res://assets/Super Pixel Effects Gigapack (Free Version)/spritesheet/Explosions/epic_explosion_001/epic_explosion_001_large_orange/spritesheet.png" id="1_8cy1o"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_qvyrt"]
+atlas = ExtResource("1_8cy1o")
+region = Rect2(0, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_25scf"]
+atlas = ExtResource("1_8cy1o")
+region = Rect2(128, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_b41xo"]
+atlas = ExtResource("1_8cy1o")
+region = Rect2(256, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_otd6o"]
+atlas = ExtResource("1_8cy1o")
+region = Rect2(384, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_bp0ap"]
+atlas = ExtResource("1_8cy1o")
+region = Rect2(512, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_kyjlm"]
+atlas = ExtResource("1_8cy1o")
+region = Rect2(640, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ml0ko"]
+atlas = ExtResource("1_8cy1o")
+region = Rect2(768, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_is4cn"]
+atlas = ExtResource("1_8cy1o")
+region = Rect2(896, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_l8cp4"]
+atlas = ExtResource("1_8cy1o")
+region = Rect2(1024, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_06qpw"]
+atlas = ExtResource("1_8cy1o")
+region = Rect2(1152, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_hjc7h"]
+atlas = ExtResource("1_8cy1o")
+region = Rect2(1280, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_2i6bo"]
+atlas = ExtResource("1_8cy1o")
+region = Rect2(1408, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_c6bpu"]
+atlas = ExtResource("1_8cy1o")
+region = Rect2(1536, 0, 128, 128)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_wyyml"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_qvyrt")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_25scf")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_b41xo")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_otd6o")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_bp0ap")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_kyjlm")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_ml0ko")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_is4cn")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_l8cp4")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_06qpw")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_hjc7h")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_2i6bo")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_c6bpu")
+}],
+"loop": 0,
+"name": &"default",
+"speed": 30.0
+}]
+
+[node name="TNT" type="Node2D" unique_id=923547183]
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=335484767]
+position = Vector2(0, -53)
+sprite_frames = SubResource("SpriteFrames_wyyml")
+frame = 12
+frame_progress = 1.0

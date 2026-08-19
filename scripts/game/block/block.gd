@@ -119,10 +119,16 @@ func _end_flash() -> void:
 	_refresh_sprite_material()
 
 
-## 闪白与悬停描边共用 sprite.material 槽位：闪白优先，结束后恢复描边
+## 可由外部设置的基础材质（如 TNT 闪烁 shader），优先级低于闪白、高于悬停描边
+var base_material: ShaderMaterial = null
+
+
+## 闪白与悬停描边共用 sprite.material 槽位：闪白优先，其次是外部基础材质，最后恢复描边
 func _refresh_sprite_material() -> void:
 	if _flash_on:
 		sprite.material = _flash_material
+	elif base_material != null:
+		sprite.material = base_material
 	elif _hovered:
 		sprite.material = _get_outline_material()
 	else:

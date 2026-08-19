@@ -14,7 +14,10 @@ const OPEN_DURATION := 0.22
 ## 与 main.tscn 中 HBoxContainer 里的地皮按钮一一对应
 const TILE_IDS: Array[StringName] = [
 	&"dirt", &"grass", &"stone", &"fire", &"water",
-	&"volcano_stable", &"upgrade", &"rarity",
+	&"conveyor_belt_leftdown", &"conveyor_belt_leftup",
+	&"conveyor_belt_rightdown", &"conveyor_belt_rightup",
+	&"tnt_spawn", &"tnt",
+	&"upgrade", &"rarity",
 	&"spawn", &"push", &"pull",
 ]
 const IMPACT_SCENE := preload("res://scenes/vfx/impact.tscn")
@@ -28,6 +31,10 @@ const BTN_POP_DIP_TIME := 0.07
 const BTN_POP_SCALE := 1.15
 const BTN_POP_UP_TIME := 0.11
 const BTN_POP_DOWN_TIME := 0.16
+## 取消选中瞬间的缩小回弹：从选中态小幅下缩，再弹回悬停/默认态
+const BTN_CANCEL_POP_SHRINK := 0.92
+const BTN_CANCEL_POP_TIME := 0.09
+const BTN_CANCEL_RECOVER_TIME := 0.14
 ## 悬停/选中的稳态动画：指数跟随速率（帧率无关，方向反转零突变）。
 ## 不用 tween——鼠标快速进出时杀 tween 重启会初速度突变，看起来一顿一顿
 const BTN_FOLLOW_GROW := 14.0
@@ -223,7 +230,7 @@ func _on_tile_button_pressed(button_index: int) -> void:
 
 
 ## 单选同步：当前选中的按钮按下，其余抬起；
-## 新选中的按钮播 impact 特效 + 弹跳放大（过冲后回落保持），取消选中的平滑复原
+## 新选中的按钮播 impact 特效 + 弹跳放大（过冲后回落保持），取消选中的带音效+小特效+平滑缩回
 func _on_selection_changed(tile: TileDef) -> void:
 	for i in _tile_buttons.size():
 		var selected := tile != null and TILE_IDS[i] == tile.id
@@ -235,6 +242,10 @@ func _on_selection_changed(tile: TileDef) -> void:
 			_sm().play_sfx(&"below_button_select")   # 选中音效
 			_play_impact(_tile_buttons[i])
 			_pop_button(i)
+		elif not selected and was:
+			_sm().play_sfx(&"menu_selection_click")   # 取消音效
+			_play_impact(_tile_buttons[i], 0.6)       # 取消小特效
+			_pop_button_cancel(i)                     # 取消后平滑缩小
 
 
 # ==================== 按钮悬停/选中动效 ====================
@@ -283,7 +294,6 @@ func _on_hbox_sorted() -> void:
 
 
 ## 选中瞬间的弹跳：当前状态 → 小幅下压 → 冲过目标 → 回落保持（一次性 tween）。
-## 取消选中不走这里，由 _process 的指数跟随平滑缩回。
 func _pop_button(index: int) -> void:
 	var old := _btn_tweens[index]
 	if old and old.is_valid():
@@ -304,6 +314,26 @@ func _pop_button(index: int) -> void:
 	_btn_tweens[index] = t
 
 
+## 取消选中瞬间的回弹：当前状态 → 小幅下缩 → 弹回悬停/默认态（一次性 tween）
+func _pop_button_cancel(index: int) -> void:
+	var old := _btn_tweens[index]
+	if old and old.is_valid():
+		old.kill()
+	_btn_pop_active[index] = true
+	var from := Vector2(_btn_scale[index], _btn_lift[index])
+	var shrink := Vector2(BTN_CANCEL_POP_SHRINK, BTN_ACTIVE_LIFT * 0.3)
+	# 取消后若仍悬停则回到 1.05，否则回到 1.0
+	var hovered := _btn_hovered[index]
+	var settle := Vector2(BTN_ACTIVE_SCALE if hovered else 1.0, BTN_ACTIVE_LIFT if hovered else 0.0)
+	var t := create_tween()
+	t.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	t.tween_method(_apply_button_transform.bind(index), from, shrink, BTN_CANCEL_POP_TIME)
+	t.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.tween_method(_apply_button_transform.bind(index), shrink, settle, BTN_CANCEL_RECOVER_TIME)
+	t.tween_callback(_on_pop_finished.bind(index))
+	_btn_tweens[index] = t
+
+
 func _on_pop_finished(index: int) -> void:
 	_btn_pop_active[index] = false
 
@@ -316,12 +346,12 @@ func _apply_button_transform(v: Vector2, index: int) -> void:
 	btn.position.y = _btn_base_y[index] - v.y
 
 
-## 选中瞬间：在按钮中心随机播放 impact 的一种冲击动画，播完（或超时兜底）自毁
-func _play_impact(btn: Button) -> void:
+## 选中/取消瞬间：在按钮中心随机播放 impact 的一种冲击动画，播完（或超时兜底）自毁
+func _play_impact(btn: Button, scale_mul := 1.0) -> void:
 	var impact := IMPACT_SCENE.instantiate() as Node2D
 	add_child(impact)
 	impact.z_index = 20   # 画在按钮之上
-	impact.scale = Vector2.ONE * IMPACT_SCALE
+	impact.scale = Vector2.ONE * IMPACT_SCALE * scale_mul
 	impact.global_position = btn.get_global_rect().get_center()
 	var sprite := impact.get_node_or_null("AnimatedSprite2D") as AnimatedSprite2D
 	if sprite == null or sprite.sprite_frames == null:

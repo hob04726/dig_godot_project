@@ -22,9 +22,9 @@ func _init() -> void:
 		var tex := tile_def.get_texture(0)
 		print("%s | %s" % [tile_def.id, tex.resource_path if tex else "<无贴图>"])
 
-	print("=== 加权抽取（rarity>=2，10 次）===")
+	print("=== 加权抽取（rarity>=2，allowed=[gold,crystal]，10 次）===")
 	for i in 10:
-		var rolled := db.roll_ore(2)
+		var rolled := db.roll_ore(2, null, [&"gold", &"crystal"])
 		print(i, " -> ", rolled.id if rolled else "<null>")
 
 	quit()

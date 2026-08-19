@@ -7,8 +7,9 @@
 
 [resource]
 script = ExtResource("1_def")
-spawn_weight = 100.0
-base_value = 2
+spawn_weight = 35.0
+base_value = 8
+base_hp = 12
 size_growth = 0.0
 id = &"iron"
 display_name = "铁矿"
