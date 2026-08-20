@@ -53,12 +53,28 @@ func _apply_center_mask(alpha: float, world_pos: Vector2) -> float:
 
 
 func _draw() -> void:
-	if grid_bounds.size == Vector2i.ZERO or _stylebox == null:
+	if _stylebox == null:
 		return
 	var mouse := get_local_mouse_position()
-	for c in grid_bounds.size.x:
-		for r in grid_bounds.size.y:
-			var cell := Vector2i(grid_bounds.position.x + c, grid_bounds.position.y + r)
+
+	# 鼠标影响范围（无限延伸），再与屏幕可视范围取交集，避免极端 reveal_radius 画爆
+	var mouse_min := Vector2i(floor((mouse - Vector2(reveal_radius, reveal_radius)) / cell_size))
+	var mouse_max := Vector2i(ceil((mouse + Vector2(reveal_radius, reveal_radius)) / cell_size))
+	var visible := _get_visible_cell_rect()
+	var min_cell := Vector2i(
+		maxi(mouse_min.x, visible.position.x),
+		maxi(mouse_min.y, visible.position.y)
+	)
+	var max_cell := Vector2i(
+		mini(mouse_max.x, visible.end.x),
+		mini(mouse_max.y, visible.end.y)
+	)
+	if min_cell.x > max_cell.x or min_cell.y > max_cell.y:
+		return
+
+	for c in range(min_cell.x, max_cell.x + 1):
+		for r in range(min_cell.y, max_cell.y + 1):
+			var cell := Vector2i(c, r)
 			var center := Vector2(cell) * cell_size
 			var dist := mouse.distance_to(center)
 			if dist > reveal_radius:
@@ -70,13 +86,14 @@ func _draw() -> void:
 				continue
 			_stylebox.border_color = color   # 立即绘制，逐格改透明度安全
 			draw_style_box(_stylebox, Rect2(center - cell_size * 0.5, cell_size))
+
 	# 四个圆角框交汇处的空洞：精确填充"四条圆弧围成的曲边区域"本身，
 	# 而不是菱形——填充边界与框线圆弧完全重合，交汇处保持圆润、不出现直边/平角。
 	# 透明度沿用同一套鼠标距离衰减（按顶点到鼠标的距离算），并同样受中心遮罩影响。
 	const ARC_STEPS := 8   # 每条圆弧的采样段数
-	for c in grid_bounds.size.x - 1:
-		for r in grid_bounds.size.y - 1:
-			var vertex := Vector2(grid_bounds.position.x + c, grid_bounds.position.y + r) * cell_size + cell_size * 0.5
+	for c in range(min_cell.x, max_cell.x):
+		for r in range(min_cell.y, max_cell.y):
+			var vertex := Vector2(c, r) * cell_size + cell_size * 0.5
 			var dist := mouse.distance_to(vertex)
 			if dist > reveal_radius:
 				continue
@@ -99,3 +116,18 @@ func _draw() -> void:
 					var a := deg_to_rad(lerpf(arc[1], arc[2], float(s) / ARC_STEPS))
 					pts.append(vertex + arc[0] + Vector2(cos(a), sin(a)) * rad)
 			draw_colored_polygon(pts, color)
+
+
+## 当前视口对应的格子索引范围（本地/世界坐标），用于裁剪无限网格
+func _get_visible_cell_rect() -> Rect2i:
+	var viewport := get_viewport()
+	if viewport == null:
+		return Rect2i()
+	var rect := viewport.get_visible_rect()
+	# 视口矩形是屏幕像素坐标，需先通过 canvas transform 反变换到世界/本地坐标
+	var inv := viewport.get_canvas_transform().affine_inverse()
+	var top_left := to_local(inv * rect.position)
+	var bottom_right := to_local(inv * rect.end)
+	var min_cell := Vector2i(floor(top_left / cell_size))
+	var max_cell := Vector2i(ceil(bottom_right / cell_size))
+	return Rect2i(min_cell, max_cell - min_cell)

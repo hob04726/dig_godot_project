@@ -82,7 +82,8 @@ func _init() -> void:
 	var state0 := GameState.new()
 	var ts0 := TalentSystem.new(state0, db)
 	_check(ts0.compute_coin_gain(100, &"coal", {}, 1.0).to_int() == 100, "无天赋结算 = base")
-	state0.add_coins(BigNumber.from_string("1e9"))
+	# 新升华公式：8M 累计金币对应 10 升华点（100→1, 10K→2, 1M→3, 之后每 1M+1）
+	state0.add_coins(BigNumber.from_int(8_000_000))
 	state0.apply_ascension()
 	_check(ts0.compute_coin_gain(100, &"coal", {}, 1.0).to_int() == 110, "10 升华点 → ×1.1")
 	_check(ts0.compute_coin_gain(100, &"coal", {}, 0.1).to_int() == 11, "reward_ratio 0.1 → 11")
@@ -108,17 +109,6 @@ func _init() -> void:
 	var normal_seed := _find_seed_over(ts2.get_pickaxe_crit_chance())
 	var normal := ts2.hit_damage_details(10, 1.0, _rng(normal_seed))
 	_check(normal["crit"] == false and normal["damage"] == 20, "hit_damage_details 非暴击标记")
-
-	# --- 永久槽选择（按成本取顶 N） ---
-	var state3 := GameState.new()
-	var ts3 := TalentSystem.new(state3, db)
-	state3.record_talent_purchase(&"prod_coal_01")   # 750
-	state3.record_talent_purchase(&"coin_bonus")     # 500
-	state3.record_talent_purchase(&"pickaxe_root")   # 1000
-	ts3.invalidate()
-	var keep := ts3.select_preserved_talents(2)
-	_check(keep.size() == 2 and keep.has(&"pickaxe_root") and keep.has(&"prod_coal_01"),
-		"保留成本最高 2 个")
 
 	print("=== talent_system_test：失败 %d 处 ===" % _failures)
 	quit(1 if _failures > 0 else 0)

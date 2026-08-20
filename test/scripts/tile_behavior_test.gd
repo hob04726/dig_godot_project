@@ -36,7 +36,7 @@ func _init() -> void:
 	_check(tnt_spawn.behavior == TileDef.Behavior.TNT_SPAWN and tnt_spawn.spawn_ore_id == &"tnt", "tnt_spawn 行为配置")
 	_check(tnt_tile.behavior == TileDef.Behavior.TNT and tnt_tile.spawn_ore_id == &"tnt", "tnt 地皮行为配置")
 
-	# --- 水：落地即沉没，不给金币 ---
+	# --- 水：默认落地即沉没，不给金币 ---
 	var grid := _base_grid(dirt)
 	_set_tile(grid, Vector2i(0, 2), water)
 	var sink_ore := _make_gold_ore(gold, Vector2i(0, 2))
@@ -48,7 +48,21 @@ func _init() -> void:
 		counts["ratio"] = r)
 	grid.notify_ore_landed(sink_ore)
 	_check(not grid.ores.has(Vector2i(0, 2)), "水格矿落地后沉没")
-	_check(counts["rewarded"] == 1 and counts["discarded"] == 0, "沉没走 ore_removed（给金币）")
+	_check(counts["rewarded"] == 0 and counts["discarded"] == 1, "默认沉没走 ore_discarded（不给金币）")
+
+	# --- 水：解锁 sink refund 后按 10% 返还 ---
+	grid = _base_grid(dirt)
+	_set_tile(grid, Vector2i(0, 2), water)
+	grid.water_sink_refund_ratio = 0.1
+	var sink_ore2 := _make_gold_ore(gold, Vector2i(0, 2))
+	grid.try_spawn_ore(Vector2i(0, 2), sink_ore2)
+	counts = {"discarded": 0, "rewarded": 0, "ratio": 1.0}
+	grid.ore_discarded.connect(func(_o: OreBlock, _c: Vector2i) -> void: counts["discarded"] += 1)
+	grid.ore_removed.connect(func(_o: OreBlock, _c: Vector2i, r: float) -> void:
+		counts["rewarded"] += 1
+		counts["ratio"] = r)
+	grid.notify_ore_landed(sink_ore2)
+	_check(counts["rewarded"] == 1 and counts["discarded"] == 0, "解锁后沉没走 ore_removed（给金币）")
 	_check(counts["ratio"] == 0.1, "水沉没只返还价值 10%")
 
 	# --- 升级台：每几秒升一级 ---

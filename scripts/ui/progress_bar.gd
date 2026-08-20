@@ -16,9 +16,9 @@ func _ready() -> void:
 	if atlas == null:
 		push_warning("progress_bar: 找不到图集")
 		return
-	# 根据图集宽度自动确定帧数（每行 16x16 帧），避免硬编码 15/16 与贴图失配
-	var atlas_width := atlas.get_width()
-	frames = maxi(1, atlas_width / int(frame_size.x))
+	# 使用导出的帧数（默认 15），但不超过图集实际可容纳的帧数，避免最后一帧被空/冗余贴图占用
+	var max_frames := atlas.get_width() / int(frame_size.x)
+	frames = clampi(frames, 1, max_frames)
 	for i in frames:
 		var at := AtlasTexture.new()
 		at.atlas = atlas

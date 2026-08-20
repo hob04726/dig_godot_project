@@ -19,36 +19,41 @@ func _init() -> void:
 	st.increment_ore_mined(&"coal")
 	_check(st.get_ore_mined(&"coal") == 2, "ore_mined 计数")
 
-	# --- 升华（Cookie Clicker 式：总点数按累计推导，升华时领取差值） ---
-	st.add_coins(BigNumber.from_string("1e9"))   # lifetime = 500 + 1e9
-	_check(st.ascension_points_total().to_int() == 10, "累计≈1e9 → 总点数 10")
+	# --- 升华：总点数按累计推导，升华时领取差值（100→1, 10K→2, 1M→3, 之后每 1M→+1） ---
+	st.add_coins(BigNumber.from_int(1_000_000))   # lifetime = 500 + 1e6 ≈ 1e6
+	_check(st.ascension_points_total().to_int() == 3, "累计≈1e6 → 总点数 3")
 	var gained := st.apply_ascension()
-	_check(gained.to_int() == 10, "首次升华领取差值 10 点")
+	_check(gained.to_int() == 3, "首次升华领取差值 3 点")
 	_check(st.coins.is_zero(), "升华后金币清零")
-	_check(st.permanent_multiplier().eq(BigNumber.from_float(1.1)), "已领取 10 点 → 声望倍率 1.1")
+	_check(st.permanent_multiplier().eq(BigNumber.from_float(1.03)), "已领取 3 点 → 声望倍率 1.03")
 	_check(st.run_version == 1, "升华后 run_version = 1")
+	_check(st.get_ore_mined(&"coal") == 0, "升华后 ore_mined 清零")
 
-	# 继续赚到累计 9e9 → 总点数 20，第二次升华只领差值 10（Cookie Clicker 差分机制）
-	st.add_coins(BigNumber.from_string("8e9"))
-	_check(st.ascension_points_total().to_int() == 20, "累计 9e9 → 总点数 20")
+	# 继续赚到累计 2e6 → 总点数 4，第二次升华只领差值 1
+	st.add_coins(BigNumber.from_int(1_000_000))
+	_check(st.ascension_points_total().to_int() == 4, "累计 2e6 → 总点数 4")
 	var gained2 := st.apply_ascension()
-	_check(gained2.to_int() == 10, "第二次升华只领差值 10")
+	_check(gained2.to_int() == 1, "第二次升华只领差值 1")
 	_check(st.coins.is_zero(), "第二次升华后金币清零")
 
 	# --- 下一升华点所需金币 ---
 	var st6 := GameState.new()
-	_check(Prestige.coins_to_next_point(st6.lifetime_coins).eq(BigNumber.from_int(1_000_000)), "0 累计时还需 1e6 到 1 点")
-	st6.add_coins(BigNumber.from_int(500_000))
-	_check(Prestige.coins_to_next_point(st6.lifetime_coins).eq(BigNumber.from_int(500_000)), "500k 时还需 500k")
-	st6.add_coins(BigNumber.from_int(500_000))
-	# 1e6 时正好 1 点，下一点阈值 8e6
-	_check(Prestige.coins_to_next_point(st6.lifetime_coins).eq(BigNumber.from_int(7_000_000)), "1e6 时还需 7e6 到 2 点")
+	_check(Prestige.coins_to_next_point(st6.lifetime_coins).eq(BigNumber.from_int(100)), "0 累计时还需 100 到 1 点")
+	st6.add_coins(BigNumber.from_int(50))
+	_check(Prestige.coins_to_next_point(st6.lifetime_coins).eq(BigNumber.from_int(50)), "50 时还需 50")
+	st6.add_coins(BigNumber.from_int(9_950))
+	# 10K 时正好 2 点，下一点阈值 1M
+	_check(Prestige.coins_to_next_point(st6.lifetime_coins).eq(BigNumber.from_int(990_000)), "10K 时还需 990K 到 3 点")
+	st6.add_coins(BigNumber.from_int(990_000))
+	# 1M 时正好 3 点，下一点阈值 2M
+	_check(Prestige.coins_to_next_point(st6.lifetime_coins).eq(BigNumber.from_int(1_000_000)), "1M 时还需 1M 到 4 点")
 	st6.add_coins(BigNumber.from_int(7_000_000))
-	_check(Prestige.coins_to_next_point(st6.lifetime_coins).eq(BigNumber.from_int(19_000_000)), "8e6 时还需 19e6 到 3 点")
+	# 8M 时 10 点，下一点阈值 9M
+	_check(Prestige.coins_to_next_point(st6.lifetime_coins).eq(BigNumber.from_int(1_000_000)), "8M 时还需 1M 到 11 点")
 
 	# --- 升华点购买 ---
 	_check(st.record_ascension_purchase(&"meta_legacy", 3) == true, "花 3 点买升华天赋")
-	_check(st.ascension_points_available().to_int() == 17, "剩余可花 17 点")
+	_check(st.ascension_points_available().to_int() == 1, "剩余可花 1 点")
 	_check(st.record_ascension_purchase(&"meta_legacy", 0) == false, "重复购买失败")
 	_check(st.record_ascension_purchase(&"meta_xxx", 9999) == false, "点数不足失败")
 
@@ -79,20 +84,20 @@ func _init() -> void:
 	_check(st2.ascension_points_spent == st.ascension_points_spent, "存档已花升华点一致")
 	_check(st2.ascension_points_total().eq(st.ascension_points_total()), "存档总点数按累计推导一致")
 	_check(st2.run_version == st.run_version, "存档 run_version 一致")
-	_check(st2.get_ore_mined(&"coal") == 2, "存档 ore_mined 一致")
+	_check(st2.get_ore_mined(&"coal") == 0, "存档 ore_mined 一致（升华后已清空）")
 	_check(st2.has_talent(&"unlock_coal"), "存档普通天赋一致")
 	_check(st2.has_ascension(&"meta_legacy"), "存档升华天赋一致")
 	_check(st2.world_name == "水晶洞", "存档世界名一致")
 
-	# --- 升华保留（永久槽） ---
+	# --- 升华后清空普通天赋 ---
 	var st5 := GameState.new()
 	st5.record_talent_purchase(&"prod_coal_01")
 	st5.record_talent_purchase(&"coin_bonus")
 	st5.add_coins(BigNumber.from_string("1e9"))
-	st5.apply_ascension([&"coin_bonus"])
-	_check(st5.has_talent(&"coin_bonus"), "升华保留指定天赋")
-	_check(not st5.has_talent(&"prod_coal_01"), "升华清空未保留天赋")
-	_check(st5.run_version == 1, "保留式升华 run_version 也自增")
+	st5.apply_ascension()
+	_check(not st5.has_talent(&"coin_bonus"), "升华清空 coin_bonus")
+	_check(not st5.has_talent(&"prod_coal_01"), "升华清空 prod_coal_01")
+	_check(st5.run_version == 1, "升华后 run_version 自增")
 
 	# --- 旧档缺 run_version 容错 ---
 	var st4 := GameState.new()

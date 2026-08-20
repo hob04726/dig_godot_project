@@ -7,7 +7,7 @@ extends RefCounted
 ##
 ## 聚合规则（统一判定 _is_purchased）：
 ##   加 bucket：PICKAXE_DAMAGE_FLAT / PICKAXE_CRIT_CHANCE / PICKAXE_CRIT_DAMAGE /
-##             GLOBAL_COIN_MULT / GLOBAL_ORE_VALUE_MULT / PERMANENT_SLOT
+##             GLOBAL_COIN_MULT / GLOBAL_ORE_VALUE_MULT
 ##   乘 bucket（per ore）：ORE_VALUE_MULT
 ##   SET（取已购最大值，per tile）：TILE_BEHAVIOR_UP
 ##   集合：UNLOCK_ORE / UNLOCK_TILE
@@ -47,7 +47,6 @@ var _crit_damage := 0.0
 var _aoe_radius := 0
 var _global_coin_sum := 0.0
 var _global_ore_value_sum := 0.0
-var _permanent_slots := 0
 var _ore_value_mult: Dictionary[StringName, float] = {}
 var _tile_overrides: Dictionary[StringName, Dictionary] = {}
 var _unlocked_ores: Dictionary[StringName, bool] = {}
@@ -177,24 +176,22 @@ func get_permanent_multiplier() -> BigNumber:
 	return _state.permanent_multiplier()
 
 
-## 永久槽数量 = Σ(PERMANENT_SLOT)
-func get_permanent_slot_count() -> int:
-	_ensure()
-	return _permanent_slots
+## 是否已解锁"水域沉没矿返还金币"机制
+func has_water_sink_refund() -> bool:
+	return _state.has_ascension(&"meta_water_sink")
 
 
-## 升华时保留的普通天赋：已购普通天赋中成本最高的 N 个
-func select_preserved_talents(slot_count: int) -> Array[StringName]:
-	_ensure()
-	var purchased: Array[TalentDef] = []
-	for def in _db.get_normal_defs():
-		if _state.has_talent(def.id):
-			purchased.append(def)
-	purchased.sort_custom(func(a: TalentDef, b: TalentDef) -> bool: return a.cost.gt(b.cost))
-	var result: Array[StringName] = []
-	for i in mini(slot_count, purchased.size()):
-		result.append(purchased[i].id)
-	return result
+## 新一轮开局可探索区域边长（3/5/7/9）
+func get_starting_area_size() -> int:
+	if _state.has_ascension(&"meta_area_9x9"): return 9
+	if _state.has_ascension(&"meta_area_7x7"): return 7
+	if _state.has_ascension(&"meta_area_5x5"): return 5
+	return 3
+
+
+## 是否已解锁无限放置（不受水域/区域限制）
+func has_unlimited_placement() -> bool:
+	return _state.has_ascension(&"meta_unlimited_placement")
 
 
 # ==================== 结算 / 挖矿管线 ====================
@@ -251,7 +248,6 @@ func _rebuild() -> void:
 	_aoe_radius = 0
 	_global_coin_sum = 0.0
 	_global_ore_value_sum = 0.0
-	_permanent_slots = 0
 	_ore_value_mult.clear()
 	_tile_overrides.clear()
 	_unlocked_ores.clear()
@@ -277,8 +273,6 @@ func _rebuild() -> void:
 				_global_coin_sum += def.value.to_float() if def.value != "" else 0.0
 			"GLOBAL_ORE_VALUE_MULT":
 				_global_ore_value_sum += def.value.to_float() if def.value != "" else 0.0
-			"PERMANENT_SLOT":
-				_permanent_slots += int(def.value.to_float()) if def.value != "" else 0
 			"ORE_VALUE_MULT":
 				var v := def.value.to_float() if def.value != "" else 1.0
 				for ore in def.target_ids:

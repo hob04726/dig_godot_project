@@ -6,8 +6,9 @@ extends RefCounted
 ##   1. 所有写入走方法，成功后发 changed 信号；
 ##   2. 视图（GameManager/HUD/天赋树）只读订阅，禁止反向写回；
 ##   3. 读写分离：to_dict() 给存档，load_from_dict() 恢复。
-## 升华点与声望语义（Cookie Clicker / Heavenly Chips 式，用户确认）：
-##   总升华点 = floor(cbrt(累计金币 / 1e6))，按全时间累计推导，永不减少；
+## 升华点与声望语义（用户确认）：
+##   100 → 1 点，10K → 2 点，1M → 3 点，之后每 +1M → +1 点；
+##   按全时间累计金币推导，永不减少；
 ##   每次升华领取"新总数 − 已领取"的差值，累进已领取数；
 ##   每点升华点提供 +1% 金币获取（按已领取点数计入声望；花掉的不降低声望等级）。
 
@@ -75,28 +76,21 @@ func get_ore_mined(ore_id: StringName) -> int:
 
 # ==================== 升华 ====================
 
-## 应有点数 = floor(cbrt(累计金币 / 1e6))（按全时间累计推导，永不减少）
+## 应有点数：100→1, 10K→2, 1M→3, 之后每 1M→+1（按全时间累计推导，永不减少）
 func ascension_points_total() -> BigNumber:
 	return Prestige.points_for(lifetime_coins)
 
 
-## 升华结算：领取"新总数 − 已领取"的差值，清空本轮金币与普通天赋，进入新一轮。
-## preserve_ids：永久槽保留的普通天赋（清空时保留它们）。
+## 升华结算：领取"新总数 − 已领取"的差值，清空本轮金币/普通天赋/开采计数，进入新一轮。
 ## 返回本次领取的升华点；run_version 自增（主场景据此重建网格）。
-func apply_ascension(preserve_ids: Array[StringName] = []) -> BigNumber:
+func apply_ascension() -> BigNumber:
 	var gain := ascension_points_total().sub(ascension_points_earned)
 	if gain.is_negative():
 		gain = BigNumber.zero()
 	ascension_points_earned = ascension_points_earned.add(gain)
 	coins = BigNumber.zero()
-	if preserve_ids.is_empty():
-		talent_purchases.clear()
-	else:
-		var preserved: Dictionary[StringName, bool] = {}
-		for id in preserve_ids:
-			if talent_purchases.has(id):
-				preserved[id] = true
-		talent_purchases = preserved
+	ore_mined.clear()
+	talent_purchases.clear()
 	run_version += 1
 	changed.emit()
 	return gain

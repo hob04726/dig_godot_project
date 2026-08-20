@@ -144,8 +144,11 @@ func _set_orb_height(value: float) -> void:
 func set_orb_progress(lifetime_coins: BigNumber) -> void:
 	if effect_type != "PRESTIGE_RESET":
 		return
-	var root := lifetime_coins.div(BigNumber.from_int(1_000_000)).cbrt().to_float()
-	var progress := clampf(root - floorf(root), 0.0, 1.0)
+	if orb_sprite != null and orb_sprite.material == null:
+		var mat := ShaderMaterial.new()
+		mat.shader = load("res://scripts/shaders/reset_orb.gdshader")
+		orb_sprite.material = mat
+	var progress := Prestige.progress_to_next_point(lifetime_coins)
 	_set_orb_height(progress)
 
 

@@ -42,10 +42,11 @@ func _init() -> void:
 	_check(BigNumber.from_float(0.5).floor().eq(_bn("0")), "floor(0.5)=0")
 	_check(_bn("1e16").floor().eq(_bn("1e16")), "floor(1e16)=1e16")
 
-	# --- 升华公式（Prestige 集成） ---
-	_check(Prestige.points_for(_bn("1e6")).eq(_bn("1")), "1e6 → 1 点")
-	_check(Prestige.points_for(_bn("1e9")).eq(_bn("10")), "1e9 → 10 点")
-	_check(Prestige.points_for(_bn("1e12")).eq(_bn("100")), "1e12 → 100 点")
+	# --- 升华公式（Prestige 集成）：100→1, 10K→2, 1M→3, 之后每 1M→+1 ---
+	_check(Prestige.points_for(_bn("100")).eq(_bn("1")), "100 → 1 点")
+	_check(Prestige.points_for(_bn("10000")).eq(_bn("2")), "10K → 2 点")
+	_check(Prestige.points_for(_bn("1e6")).eq(_bn("3")), "1M → 3 点")
+	_check(Prestige.points_for(_bn("2e6")).eq(_bn("4")), "2M → 4 点")
 	_check(Prestige.multiplier_from_points(_bn("10")).eq(BigNumber.from_float(1.1)), "10 点 → 倍率 1.1")
 
 	# --- 序列化 round-trip ---

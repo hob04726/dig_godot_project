@@ -6,7 +6,7 @@ extends RefCounted
 ## 存档内容（state + grid）由组合根（GameManager）组装，这里不关心结构。
 ## load() 失败（无档/损坏/版本不符）返回 {}，调用方走"新游戏"。
 
-const SAVE_VERSION := 2   # v2：升华点改 Cookie Clicker 推导（ascension_points_earned）
+const SAVE_VERSION := 3   # v3：开局网格改为中心 1 块陆地 + 周围水域
 ## 存档路径（实例变量以便测试用独立路径，不污染真实存档）
 var save_path := "user://save.json"
 

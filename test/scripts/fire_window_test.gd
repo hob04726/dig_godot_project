@@ -1,6 +1,7 @@
 extends SceneTree
 
-## 屏幕四边火焰「各自独立的 10 秒滚动窗口收入分档」测试（_record_income + EDGE）。
+## 屏幕底边火焰「独立的 10 秒滚动窗口收入分档」测试（_record_income + EDGE）。
+## _record_income 仍支持任意已注册边，本测试以底边为主、顶边为辅验证窗口独立性。
 ## 档位：>1e3 红 / >1e6 蓝 / >1e13 紫 / >1e20 黑 / >1e28 呼吸变色；amount = 5 + 档。
 
 var _failures := 0

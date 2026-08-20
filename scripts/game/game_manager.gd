@@ -2,7 +2,6 @@ extends Node2D
 class_name GameManager
 
 const ABOVE_LAYER_OFFSET := Vector2(0, -8)
-const INITIAL_GRID_SIZE := 1   # 初始 3x3 草地（半径 1）
 
 # 矿石破坏后自由落体重力
 const ORE_GRAVITY := 700.0
@@ -39,7 +38,7 @@ var _mine_rng := RandomNumberGenerator.new()
 ## 存档 I/O（内容由本组合根组装）
 var _save_manager := SaveManager.new()
 var _save_dirty := false
-## 冒火条件：四个屏幕边各自独立的 10 秒滚动窗口收入分档（会话级，不存档）——
+## 冒火条件：屏幕底边独立的 10 秒滚动窗口收入分档（会话级，不存档）——
 ##   >1e3 红火 / >1e6 蓝火 / >1e13 紫火 / >1e20 黑火 / >1e28 呼吸变色火
 const FIRE_WINDOW := 10.0
 const FIRE_SHADER := preload("res://scripts/shaders/edge_fire.gdshader")
@@ -50,7 +49,7 @@ const COIN_TEX_BRICK_GRAY := preload("res://assets/VfxMix/particle/brick_gray.pn
 const COIN_TEX_BRONZE := preload("res://assets/VfxMix/particle/coin_bronze.png")
 const COIN_TEX_SILVER := preload("res://assets/VfxMix/particle/coin_silver.png")
 const COIN_TEX_GOLD := preload("res://assets/VfxMix/particle/coin_gold.png")
-const EDGE_NAMES: Array[StringName] = [&"bottom", &"top", &"left", &"right"]
+const EDGE_NAMES: Array[StringName] = [&"bottom"]
 const EDGE_FIRE_THICKNESS := 60.0    # 火焰条厚度（逻辑像素）
 var _edge_fires: Dictionary = {}     # edge → {rect: ColorRect, mat: ShaderMaterial}
 var _income_logs: Dictionary = {}    # edge → Array[{t: 秒, v: BigNumber}]，按时间排序
@@ -212,6 +211,8 @@ func _ready() -> void:
 	_load_or_init()   # 有存档 → 恢复；无存档 → 新游戏初始化
 	# 天赋地块行为 override（TILE_BEHAVIOR_UP）推给网格
 	grid.set_tile_overrides(_talent_system.get_tile_behavior_overrides())
+	# 水域沉没矿返还比例：默认 0，购买 meta_water_sink 后按 water.tres 的 10% 生效
+	grid.water_sink_refund_ratio = 0.1 if _talent_system.has_water_sink_refund() else 0.0
 
 	grid.ore_removed.connect(_on_ore_removed)
 	grid.ore_discarded.connect(_on_ore_discarded)
@@ -245,12 +246,20 @@ func _ready() -> void:
 	_setup_cursors()
 	_setup_coin_flight_layer()
 	_setup_edge_fires()
-	# 计数器悬浮提示：鼠标下方跟随显示精确金币数（白字黑描边）
+	# 计数器悬浮提示：鼠标下方跟随显示精确金币数（白字黑描边）；有声望加成时追加一行
 	if money_label != null:
 		var panel := money_label.get_parent().get_parent() as PanelContainer
 		if panel != null:
 			ExactValueTooltip.attach(panel,
-				func() -> String: return state.coins.to_full_string() + "$")
+				func() -> String:
+					var text := state.coins.to_full_string() + "$"
+					if _talent_system != null:
+						var mult := _talent_system.get_permanent_multiplier()
+						if mult.gt(BigNumber.one()):
+							# 显示 "x1.05 (+5%)"，与直接倍率对齐
+							var percent := mult.sub(BigNumber.one()).mul(BigNumber.from_int(100))
+							text += "\n声望加成：x%s (+%s%%)" % [mult.to_compact_string(), percent.to_compact_string()]
+					return text)
 	initialized.emit()   # _ready 完成：依赖方（抽屉等）此时可安全查询解锁状态
 
 
@@ -448,18 +457,29 @@ func show_target() -> void:
 	pointer.position = grid_to_world(_hovered_cell)
 
 
-## 初始 3x3 泥土（设计：开局只有 dirt 可放置，见 defs/talents）：先写数据（CellData），再建渲染（Sprite）
+## 初始网格：中心 1 块 dirt，其余按当前轮开局区域大小填入水域。
+## 水域是默认占位，玩家只能通过替换水域来扩张陆地。
 func grid_init() -> void:
 	var dirt := db.get_tile(&"dirt")
-	if dirt == null:
-		push_error("game_manager: 缺少 dirt 地皮定义，请检查 res://defs/tiles")
+	var water := db.get_tile(&"water")
+	if dirt == null or water == null:
+		push_error("game_manager: 缺少 dirt/water 地皮定义，请检查 res://defs/tiles")
 		return
 
-	for x in range(-INITIAL_GRID_SIZE, INITIAL_GRID_SIZE + 1):
-		for y in range(-INITIAL_GRID_SIZE, INITIAL_GRID_SIZE + 1):
+	var radius := _starting_area_radius()
+	for x in range(-radius, radius + 1):
+		for y in range(-radius, radius + 1):
 			var cell := Vector2i(x, y)
-			grid.set_cell(cell, CellData.new(null, dirt))
-			create_sprite(false, cell, dirt)
+			var tile := dirt if cell == Vector2i.ZERO else water
+			grid.set_cell(cell, CellData.new(null, tile))
+			create_sprite(false, cell, tile)
+
+
+## 当前轮开局区域半径：由升华天赋决定（3×3/5×5/7×7/9×9）
+func _starting_area_radius() -> int:
+	if _talent_system == null:
+		return 1   # 安全兜底，避免启动时序问题
+	return (_talent_system.get_starting_area_size() - 1) / 2
 
 
 # ==================== 落矿 ====================
@@ -469,13 +489,7 @@ func grid_init() -> void:
 ## 各格落矿速度大体一致但有细微快慢差异。被占用/不再合法的格子清掉计时器。
 func _update_cell_spawn(delta: float) -> void:
 	var free := {}
-	for cell: Vector2i in grid.cells.keys():
-		if grid.ores.has(cell):
-			continue
-		var tile := grid.get_tile_at(cell)
-		if tile == null or tile.behavior == TileDef.Behavior.TNT \
-				or tile.behavior == TileDef.Behavior.TNT_SPAWN:
-			continue   # 空格无地皮不落矿；TNT 地皮/生成器由自身逻辑生成 TNT（水格允许，矿落上去会沉没返还 10%）
+	for cell: Vector2i in _free_cells():
 		free[cell] = true
 	for cell in _cell_spawn_timers.keys():
 		if not free.has(cell):
@@ -696,14 +710,16 @@ func _spawn_ore_on(cell: Vector2i) -> void:
 	spawn_ore(cell, ore_def, 1)
 
 
-## 空闲且可落矿的格子：水格允许（矿落上去会沉没并返还 10%），TNT 地皮/生成器排除
+## 空闲且可落矿的格子：只能是陆地地块；水域/空地/TNT 地皮/生成器均排除。
+## 未解锁 meta_water_sink 时水域吞矿不给钱，因此默认不让矿在水域生成/停留。
 func _free_cells() -> Array[Vector2i]:
 	var result: Array[Vector2i] = []
 	for cell: Vector2i in grid.cells.keys():
 		if grid.ores.has(cell):
 			continue
 		var tile := grid.get_tile_at(cell)
-		if tile == null or tile.behavior == TileDef.Behavior.TNT \
+		if tile == null or tile.behavior == TileDef.Behavior.WATER \
+				or tile.behavior == TileDef.Behavior.TNT \
 				or tile.behavior == TileDef.Behavior.TNT_SPAWN:
 			continue
 		result.append(cell)
@@ -759,6 +775,33 @@ func _mine_at(cell: Vector2i) -> void:
 		grid.remove_ore(cell)  # 发 ore_removed → 结算金币 + 破坏特效
 	else:
 		_update_mining_bar(ore)   # 还活着：更新挖矿进度条
+
+
+## 屏幕空间金额跳数：在指定世界坐标处弹出 "±金额$"，
+## 动线与矿物飞出屏幕外的金币跳数一致：匀速上飞、放大后渐隐。
+func _spawn_money_number(world_pos: Vector2, amount: BigNumber, prefix: String, color: Color) -> void:
+	if coin_number_prototype == null or _coin_flight_layer == null:
+		return
+	var screen_pos := _screen_from_world(world_pos)
+	var view := get_viewport().get_visible_rect().size
+	screen_pos.x = clampf(screen_pos.x, 36.0, view.x - 36.0)
+	screen_pos.y = clampf(screen_pos.y, 36.0, view.y - 36.0)
+	var node := coin_number_prototype.instantiate() as Node2D
+	node.z_index = 4000
+	_coin_flight_layer.add_child(node)
+	node.position = screen_pos
+	var label := node.get_node_or_null("RichTextLabel") as RichTextLabel
+	if label != null:
+		label.bbcode_enabled = true
+		label.text = "[center]%s%s$[/center]" % [prefix, amount.to_compact_string()]
+		label.add_theme_font_size_override("normal_font_size", 30)
+		label.add_theme_color_override("default_color", color)
+		label.add_theme_color_override("font_outline_color", Color(0.15, 0.1, 0.05, 1.0))
+		label.add_theme_constant_override("outline_size", 8)
+	_coin_flights.append({
+		"kind": "num", "node": node, "velocity": Vector2.UP * COIN_NUM_SPEED,
+		"time": 0.0, "target": Vector2.ZERO, "pull": 0.0,
+	})
 
 
 ## 挖矿伤害跳数：弹出伤害数字，动线与矿石破坏一致——随机 -45°~45° 向上抛出 + 重力自由落体
@@ -1087,7 +1130,8 @@ func _play_coin_and_count(pos: Vector2, gained: BigNumber, dir := Vector2.UP) ->
 	var duration := _coin_duration(gained)
 	_sm().play_sfx(&"coin_particle")   # 金币爆发
 	_spawn_coin_flight(pos, gained, dir)
-	# 出屏方向 → 屏幕边：价值记进该边的 10 秒窗口（火焰分档用）
+	# 出屏方向 → 屏幕边：价值记进该边的 10 秒窗口（火焰分档用）。
+	# 当前只注册并显示底边火焰，其它边会被 _record_income 安全忽略。
 	# dir 是"朝屏幕内"的方向：UP=从底边飞出，DOWN=顶边，LEFT=右边，RIGHT=左边
 	var edge := &"bottom"
 	if dir == Vector2.DOWN:
@@ -1163,7 +1207,7 @@ func _spawn_edge_number(pos: Vector2, gained: BigNumber, dir: Vector2) -> void:
 	var label := node.get_node_or_null("RichTextLabel") as RichTextLabel
 	if label != null:
 		label.bbcode_enabled = true
-		label.text = "[center]%s[/center]" % gained.to_compact_string()   # 居中：放大时不从一侧甩出
+		label.text = "[center]+%s$[/center]" % gained.to_compact_string()   # 居中：放大时不从一侧甩出
 		label.add_theme_font_size_override("normal_font_size", 30)
 		label.add_theme_color_override("default_color", Color(1.0, 0.9, 0.3))   # 金黄
 		label.add_theme_color_override("font_outline_color", Color(0.15, 0.1, 0.05, 1.0))
@@ -1460,6 +1504,10 @@ func _on_ore_moved(ore: OreBlock, _from_cell: Vector2i, to_cell: Vector2i) -> vo
 func _on_tile_request_spawn(cell: Vector2i, ore_id: StringName) -> void:
 	if grid.ores.size() >= _effective_max_ores():
 		return
+	# 默认不让矿落在水域；未解锁 meta_water_sink 时水域吞矿且不给钱
+	var tile := grid.get_tile_at(cell)
+	if tile != null and tile.behavior == TileDef.Behavior.WATER:
+		return
 	var ore_def := db.get_ore(ore_id)
 	if ore_def == null:
 		push_warning("tile_request_spawn: 未知矿石 %s" % ore_id)
@@ -1477,8 +1525,8 @@ func _update_money_label() -> void:
 	_refresh_money_text()
 
 
-## 收入记录 + 冒火判定：矿从哪条边出屏，价值就记进哪条边的 10 秒滚动窗口；
-## 该边窗口收入按阈值分档后，火焰沿整条边显示：
+## 收入记录 + 冒火判定：矿从底边出屏时，价值记进底边 10 秒滚动窗口；
+## 窗口收入按阈值分档后，火焰沿底边显示：
 ## >1e3 红 / >1e6 蓝 / >1e13 紫 / >1e20 黑 / >1e28 呼吸变色。
 func _record_income(gained: BigNumber, edge: StringName) -> void:
 	if not _edge_fires.has(edge) or gained.is_zero():
@@ -1538,11 +1586,10 @@ func _update_fire_breath() -> void:
 		mat.set_shader_parameter("colour_2", Color.from_hsv(fposmod(h + 0.15, 1.0), 0.9, 0.9))
 
 
-# ==================== 屏幕四边火焰条 ====================
+# ==================== 屏幕底边火焰条 ====================
 
-## 在主 UI 层沿四条屏幕边各建一条火焰 ColorRect（各自独立 ShaderMaterial），
-## 条带 60px 厚、z_index=-1（垫在 UI 控件之下），旋转让火苗朝屏幕内：
-## 底边不转，顶边 180°，左边 90°，右边 -90°。
+## 在主 UI 层沿屏幕底边建一条火焰 ColorRect（独立 ShaderMaterial），
+## 条带 60px 厚、z_index=-1（垫在 UI 控件之下），底边不旋转，火苗朝上。
 func _setup_edge_fires() -> void:
 	if _coin_flight_layer == null:
 		return
@@ -1564,16 +1611,13 @@ func _setup_edge_fires() -> void:
 	get_viewport().size_changed.connect(_layout_edge_fires)
 
 
-## 条带布局：底/顶边用 W×T 横条；左/右边用 H×T 横条旋转 ±90°（绕中心 pivot）
+## 条带布局：底边用 W×T 横条，不旋转（绕中心 pivot）
 func _layout_edge_fires() -> void:
 	if _edge_fires.is_empty():
 		return
 	var size := get_viewport().get_visible_rect().size
 	var t := EDGE_FIRE_THICKNESS
 	_place_edge_fire(&"bottom", Vector2(0, size.y - t), Vector2(size.x, t), 0.0)
-	_place_edge_fire(&"top", Vector2.ZERO, Vector2(size.x, t), 180.0)
-	_place_edge_fire(&"left", Vector2(t - size.y, size.y - t) * 0.5, Vector2(size.y, t), 90.0)
-	_place_edge_fire(&"right", Vector2(2.0 * size.x - t - size.y, size.y - t) * 0.5, Vector2(size.y, t), -90.0)
 
 
 func _place_edge_fire(edge: StringName, pos: Vector2, strip_size: Vector2, deg: float) -> void:
@@ -1611,12 +1655,13 @@ func _load_or_init() -> void:
 		_init_new_run()
 
 
-## 新一轮初始化：初始 dirt 网格 + 金币种子矿（显式 spawn，绕过落矿门控）
+## 新一轮初始化：中心 dirt + 周围水域 + 随机矿种子。
+## 中心强制生成一个随机自然矿作为开局；若还有空闲陆地再随机生成一个，避免开局就满格报错。
 func _init_new_run() -> void:
 	grid_init()
-	spawn_ore(Vector2i.ONE, db.get_ore(&"gold"), 1)
-	spawn_random_ore()
-	spawn_random_ore()
+	_spawn_ore_on(Vector2i.ZERO)
+	if not _free_cells().is_empty():
+		spawn_random_ore()
 
 
 ## 从快照重建网格：先数据（cells），再场景（sprite），最后矿石（工厂）
@@ -1748,6 +1793,23 @@ func is_tile_unlocked(tile_id: StringName) -> bool:
 	return _talent_system == null or _talent_system.has_unlocked_tile(tile_id)
 
 
+## 当前选中地块能否放在指定格：只要是水域即可放置，不再要求与中心连通。
+## 非无限模式仍限制在开局区域内；解锁 meta_unlimited_placement 后可放在任何水域/空地。
+func _can_place_selected_at(cell: Vector2i) -> bool:
+	if not grid.can_place_tile(cell):
+		return false
+	if _talent_system != null and _talent_system.has_unlimited_placement():
+		return true
+	# 非无限模式：必须在开局区域内（区域内的初始格都是水域）
+	return _is_within_starting_area(cell)
+
+
+## 指定格是否在本轮开局区域（3×3/5×5/7×7/9×9）内
+func _is_within_starting_area(cell: Vector2i) -> bool:
+	var radius := _starting_area_radius()
+	return abs(cell.x) <= radius and abs(cell.y) <= radius
+
+
 ## 抽屉按钮调用：切换某地皮为当前放置目标；再点一次取消选择。
 ## 未在天赋中解锁的地块不能进入放置模式。
 func toggle_tile_selection(id: StringName) -> void:
@@ -1779,7 +1841,11 @@ func _place_selected(cell: Vector2i) -> void:
 	if not is_tile_unlocked(selected_tile.id):
 		push_warning("_place_selected: %s 未解锁" % selected_tile.display_name)
 		return
-	# 放置计价：base × 1.15^已放置；先扣钱再写网格（失败回滚）
+	# 区域/水域限制检查
+	if not _can_place_selected_at(cell):
+		_sm().play_sfx(&"cant_buy")
+		return
+	# 放置计价：base × 1.35^已放置；先扣钱再写网格（失败回滚）
 	var cost := TilePricing.placement_cost(selected_tile, grid.get_placed_count(selected_tile.id))
 	if not state.spend_coins(cost):
 		print("金币不足：%s 需要 %s" % [selected_tile.display_name, cost.to_compact_string()])
@@ -1790,8 +1856,14 @@ func _place_selected(cell: Vector2i) -> void:
 		state.add_coins(cost)   # 放置失败回滚
 		print("放置失败: %s" % result.message)
 		return
+	# 替换水域时先清掉旧 sprite
+	var old_node := tiles_by_cell.get(cell) as Block
+	if old_node != null:
+		tiles_by_cell.erase(cell)
+		old_node.queue_free()
 	create_sprite(false, cell, selected_tile)
 	_sm().play_sfx(&"place_block")
+	_spawn_money_number(grid_to_world(cell), cost, "-", Color(1.0, 0.25, 0.25))
 	_last_placed_cell = cell
 	# 写入后立刻刷新指针颜色（鼠标没动时 update_hover 会提前返回）
 	_update_pointer_tint()
@@ -1811,7 +1883,7 @@ func _batch_place_if_held() -> void:
 		return
 	if _hovered_cell == _last_placed_cell:
 		return
-	if not grid.can_place_tile(_hovered_cell):
+	if not _can_place_selected_at(_hovered_cell):
 		return
 	_place_selected(_hovered_cell)
 
@@ -1821,8 +1893,13 @@ func _remove_tile_at(cell: Vector2i) -> void:
 	if tile == null:
 		print("删除失败: 该位置没有地块")
 		return
+	# 水域本身不可删除
+	if tile.behavior == TileDef.Behavior.WATER:
+		print("删除失败: 该位置是水域")
+		return
 	var placed_before := grid.get_placed_count(tile.id)
-	var result := grid.try_remove_tile(cell)
+	var water := db.get_tile(&"water")
+	var result := grid.try_remove_tile(cell, water)
 	if not result.is_ok():
 		print("删除失败: %s" % result.message)
 		return
@@ -1831,6 +1908,7 @@ func _remove_tile_at(cell: Vector2i) -> void:
 	if not refund.is_zero():
 		state.add_coins(refund)
 		print("卖出 %s 返还 %s" % [tile.display_name, refund.to_compact_string()])
+		_spawn_money_number(grid_to_world(cell), refund, "+", Color(0.25, 1.0, 0.35))
 	# 如果删除的是正在倒计时的 TNT 地皮，取消倒计时
 	if tile.behavior == TileDef.Behavior.TNT:
 		for i in range(_active_tnts.size() - 1, -1, -1):
@@ -1838,10 +1916,12 @@ func _remove_tile_at(cell: Vector2i) -> void:
 			if entry["kind"] == &"tile" and entry["cell"] == cell:
 				_active_tnts.remove_at(i)
 				break
+	# 移除旧 sprite，替换为水域 sprite
 	var node := tiles_by_cell.get(cell) as Block
 	if node != null:
 		tiles_by_cell.erase(cell)
 		node.queue_free()
+	create_sprite(false, cell, water)
 	_sm().play_sfx(&"remove_block")
 	# 刚删掉的格不立刻被批量放置补回来（长按左键 + 右键删除的组合操作）
 	_last_placed_cell = cell
@@ -1897,11 +1977,11 @@ func _update_pointer_tint() -> void:
 	if selected_tile == null:
 		pointer.modulate = Color.WHITE
 		return
-	if grid.can_place_tile(_hovered_cell):
+	if _can_place_selected_at(_hovered_cell):
 		# 可放置：金币充足绿 / 不足红
 		pointer.modulate = POINTER_PLACE_COLOR if _can_afford_selected() else POINTER_NO_MONEY_COLOR
 	else:
-		# 位置不可放置（含已被占用/不可达的格子）：橙
+		# 位置不可放置（含已被占用/不可达/超出区域/非水域的格子）：橙
 		pointer.modulate = POINTER_BLOCKED_COLOR
 
 
@@ -1993,7 +2073,7 @@ func update_hover(cell_override := INVALID_CELL) -> void:
 func _update_ghost(cell: Vector2i) -> void:
 	var show := selected_tile != null \
 		and get_viewport().gui_get_hovered_control() == null \
-		and grid.can_place_tile(cell)
+		and _can_place_selected_at(cell)
 	if show:
 		if _ghost == null:
 			_ghost = Sprite2D.new()

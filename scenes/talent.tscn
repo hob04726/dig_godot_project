@@ -11,6 +11,10 @@
 [ext_resource type="Script" uid="uid://bubdnf2uys4m" path="res://scripts/button/back_to_main.gd" id="8_back"]
 [ext_resource type="PackedScene" uid="uid://k7jbhrroemoc" path="res://scenes/vfx/unlock.tscn" id="10_unlock"]
 [ext_resource type="Script" uid="uid://2ixvkbwgbc3n" path="res://scripts/ui/button_hover_fx.gd" id="11_hoverfx"]
+[ext_resource type="Script" uid="uid://dvuxokkbrkdj0" path="res://scripts/button/open_settings.gd" id="12_settings"]
+[ext_resource type="Texture2D" uid="uid://djp2ui6a0bhup" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_Icons.png" id="13_icons"]
+[ext_resource type="Texture2D" uid="uid://dy5awy4d1opk4" path="res://assets/sketch-town/Tiles/grass_center_E.png" id="14_grass"]
+[ext_resource type="Script" path="res://scripts/button/talent_finish_ascension.gd" id="15_finish"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_uqx37"]
 shader = ExtResource("1_cj7wb")
@@ -22,14 +26,18 @@ shader_parameter/rotation = 0.0
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_lsgmm"]
 atlas = ExtResource("8_0uvk2")
-region = Rect2(97, 1314, 30, 12)
+region = Rect2(1, 401, 30, 14)
 
 [sub_resource type="StyleBoxTexture" id="StyleBoxTexture_mhclv"]
 texture = SubResource("AtlasTexture_lsgmm")
 texture_margin_left = 3.0
-texture_margin_top = 4.0
+texture_margin_top = 3.0
 texture_margin_right = 3.0
-texture_margin_bottom = 3.0
+texture_margin_bottom = 5.0
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_xljfi"]
+atlas = ExtResource("13_icons")
+region = Rect2(32, 16, 16, 16)
 
 [node name="Talent" type="Node2D" unique_id=11944588 node_paths=PackedStringArray("gold_label")]
 script = ExtResource("3_talent")
@@ -87,6 +95,9 @@ text = "Money"
 fit_content = true
 autowrap_mode = 0
 
+[node name="HoverFX" type="Node" parent="UI/PanelContainer" unique_id=1798169286]
+script = ExtResource("11_hoverfx")
+
 [node name="Back" type="Button" parent="UI/PanelContainer" unique_id=1371171917]
 layout_mode = 2
 flat = true
@@ -95,5 +106,37 @@ script = ExtResource("8_back")
 [node name="HoverFX" type="Node" parent="UI/PanelContainer/Back" unique_id=2034726859]
 script = ExtResource("11_hoverfx")
 
-[node name="HoverFX" type="Node" parent="UI/PanelContainer" unique_id=1798169286]
+[node name="Setting" type="Button" parent="UI" unique_id=1795523629]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -64.0
+offset_top = 21.0
+offset_right = -24.0
+offset_bottom = 61.0
+grow_horizontal = 0
+icon = SubResource("AtlasTexture_xljfi")
+flat = true
+icon_alignment = 1
+expand_icon = true
+script = ExtResource("12_settings")
+
+[node name="HoverFX" type="Node" parent="UI/Setting" unique_id=977338692]
+script = ExtResource("11_hoverfx")
+
+[node name="FinishAscension" type="Button" parent="UI" unique_id=316509966]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -25.6
+offset_right = 25.6
+offset_bottom = 70.4
+grow_horizontal = 2
+icon = ExtResource("14_grass")
+flat = true
+icon_alignment = 1
+expand_icon = true
+script = ExtResource("15_finish")
+
+[node name="HoverFX" type="Node" parent="UI/FinishAscension" unique_id=651654446]
 script = ExtResource("11_hoverfx")

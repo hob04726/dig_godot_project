@@ -17,8 +17,6 @@ class_name ResetVfx
 
 signal finished
 
-const COINS_PER_POINT_BASE := 1_000_000
-
 var _from_lifetime: BigNumber = BigNumber.zero()
 var _to_lifetime: BigNumber = BigNumber.zero()
 var _from_points: BigNumber = BigNumber.zero()
@@ -64,8 +62,7 @@ func _process(delta: float) -> void:
 	var t := clampf(_elapsed / duration, 0.0, 1.0)
 	var current_lifetime := _lerp_big(_from_lifetime, _to_lifetime, t)
 	var current_points := Prestige.points_for(current_lifetime)
-	var root := _cbrt_lifetime(current_lifetime)
-	var progress := clampf(root - floor(root), 0.0, 1.0)
+	var progress := Prestige.progress_to_next_point(current_lifetime)
 
 	_set_orb_height(progress)
 
@@ -94,7 +91,6 @@ func _set_orb_height(value: float) -> void:
 		return
 	var mat := orb_sprite.material as ShaderMaterial
 	mat.set_shader_parameter("height", value)
-	mat.set_shader_parameter("oheight", value)
 
 
 func _set_light_effect(active: bool) -> void:
@@ -111,17 +107,9 @@ func _trigger_point_flash() -> void:
 
 func _update_labels(lifetime: BigNumber, points: BigNumber) -> void:
 	if points_label != null:
-		points_label.text = "[center]升华点：%s[/center]" % points.to_full_string()
+		points_label.text = "[center]%s[/center]" % points.to_full_string()
 	if lifetime_label != null:
 		lifetime_label.text = "[center]累计金币：%s$[/center]" % lifetime.to_compact_string()
-
-
-## 计算 cbrt(lifetime / 1e6)，返回 float（0~N，N 为当前升华点数）
-func _cbrt_lifetime(lifetime: BigNumber) -> float:
-	var base := BigNumber.from_int(COINS_PER_POINT_BASE)
-	var ratio := lifetime.div(base)
-	var root := ratio.cbrt()
-	return root.to_float()
 
 
 ## BigNumber 线性插值：a + (b - a) * t

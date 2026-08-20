@@ -52,8 +52,10 @@ func _run() -> void:
 
 	var tooltip: String = grid._tooltip_text(reset_node)
 	var expected := Prestige.coins_to_next_point(state.lifetime_coins).to_compact_string()
-	_check(tooltip.find("下一升华点还需") != -1, "说明框包含“下一升华点还需”")
+	var expected_points := Prestige.points_for(state.lifetime_coins).to_full_string()
+	_check(tooltip.find("下一级还需") != -1, "说明框包含“下一级还需”")
 	_check(tooltip.find(expected) != -1, "说明框显示正确的剩余金币 %s" % expected)
+	_check(tooltip.find(expected_points) != -1, "说明框显示正确的当前升华点 %s" % expected_points)
 
 	_finish()
 

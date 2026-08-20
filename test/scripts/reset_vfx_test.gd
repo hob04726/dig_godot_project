@@ -1,7 +1,7 @@
 extends SceneTree
 
 ## 升华特效测试：加载 reset.tscn，设置 lifetime 从 1e6 到 9e6，
-## 验证水位上涨、升华点从 1 增加到 2、闪光触发。
+## 验证水位上涨、升华点从 3 增加到 11、闪光触发。
 ## 运行：godot --headless --script res://test/scripts/reset_vfx_test.gd
 
 var _failures := 0
@@ -30,7 +30,7 @@ func _init() -> void:
 	# 验证结束状态
 	var points_label := vfx.get_node("PointsLabel") as RichTextLabel
 	var lifetime_label := vfx.get_node("LifetimeLabel") as RichTextLabel
-	_check(points_label != null and points_label.text.find("2") >= 0, "结束时升华点显示为 2")
+	_check(points_label != null and points_label.text.find("11") >= 0, "结束时升华点显示为 11")
 	_check(lifetime_label != null and lifetime_label.text.find("9M") >= 0 or lifetime_label.text.find("900") >= 0, "结束时累计金币显示约 9e6")
 
 	var orb_sprite := vfx.get_node("OrbSprite") as Sprite2D

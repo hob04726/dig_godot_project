@@ -89,6 +89,10 @@ func normalize() -> void:
 			if absf(raw - rnd) <= CMP_EPS * maxf(1.0, absf(raw)):
 				mantissa = rnd
 				exponent = 0
+				# 吸附成 0 时直接结束，避免后续 log(0) 崩溃；
+				# 吸附成非零整数时继续走下方归一化，保证 mantissa 回到 [1,10)。
+				if mantissa == 0.0:
+					return
 	var sign := signf(mantissa)
 	var a := absf(mantissa)
 	var e := int(floorf(log(a) / LOG10))
@@ -172,9 +176,9 @@ func add(other: BigNumber) -> BigNumber:
 	if diff < -PRECISION_GAP:
 		return other.duplicate()
 	# 对齐到 self 的指数：m 表示 mantissa×10^self.exponent
-	var bn := from_float(mantissa + other.mantissa * pow(10.0, -float(diff)))
-	bn.exponent += exponent
-	bn.normalize()
+	# 必须携带 self.exponent 一起归一化，否则整数吸附会在缩放后的尾数上发生，
+	# 后续再把 exponent 加回去会把吸附误差放大 10^exponent 倍（如 1e11+1 → 1e11）。
+	var bn := from_mantissa_exp(mantissa + other.mantissa * pow(10.0, -float(diff)), exponent)
 	return bn
 
 
@@ -185,9 +189,8 @@ func sub(other: BigNumber) -> BigNumber:
 func mul(other: BigNumber) -> BigNumber:
 	if is_zero() or other.is_zero():
 		return zero()
-	var bn := from_float(mantissa * other.mantissa)
-	bn.exponent += exponent + other.exponent
-	bn.normalize()
+	# 与 add 同理：携带真实指数归一化，防止整数吸附在缩放尾数上发生。
+	var bn := from_mantissa_exp(mantissa * other.mantissa, exponent + other.exponent)
 	return bn
 
 
@@ -198,9 +201,7 @@ func div(other: BigNumber) -> BigNumber:
 		return from_float(INF) if not is_negative() else from_float(-INF)
 	if is_zero():
 		return zero()
-	var bn := from_float(mantissa / other.mantissa)
-	bn.exponent += exponent - other.exponent
-	bn.normalize()
+	var bn := from_mantissa_exp(mantissa / other.mantissa, exponent - other.exponent)
 	return bn
 
 

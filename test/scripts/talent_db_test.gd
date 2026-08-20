@@ -12,7 +12,7 @@ func _init() -> void:
 	var normal := db.get_normal_defs()
 	var ascension := db.get_ascension_defs()
 	_check(normal.size() == 260, "普通天赋 260 条（实际 %d）" % normal.size())
-	_check(ascension.size() == 6, "升华天赋 6 条（实际 %d）" % ascension.size())
+	_check(ascension.size() == 11, "升华天赋 11 条（实际 %d）" % ascension.size())
 
 	# 表头名映射：关键字段
 	var reset := _find(normal, &"talent_reset")

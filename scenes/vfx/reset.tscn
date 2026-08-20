@@ -5,12 +5,16 @@
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_reset"]
 shader = ExtResource("1_shader")
-shader_parameter/water_color = Color(1, 0.85, 0.1, 1)
-shader_parameter/ball_color = Color(1, 1, 1, 1)
+shader_parameter/water_color = Color(1, 0.78, 0.05, 1)
+shader_parameter/glass_color = Color(0.85, 0.92, 1, 0.22)
+shader_parameter/ball_color = Color(0.95, 0.95, 0.98, 0.9)
+shader_parameter/outline_color = Color(0.6, 0.7, 0.85, 1)
 shader_parameter/height = 0.28999999351792
 shader_parameter/wave_speed = 1.5
 shader_parameter/wave_ci = 0.025
-shader_parameter/ball_border_ci = 5.0
+shader_parameter/ball_border_ci = 8.0
+shader_parameter/outline_width = 0.025
+shader_parameter/bottom_residue = 0.05
 shader_parameter/light_effect = false
 
 [node name="Reset" type="Node2D" unique_id=1809654563]

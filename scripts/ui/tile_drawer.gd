@@ -46,6 +46,13 @@ const IMPACT_SCALE := 0.5
 const OUTLINE_SHADER := preload("res://scripts/shaders/outline.gdshader")
 const BTN_OUTLINE_THICKNESS := 8.0
 
+## 地皮按钮悬浮花费提示样式（与左上角精确余额提示一致）
+const COST_TIP_FONT_SIZE := 20
+const COST_TIP_OUTLINE_SIZE := 6
+const COST_TIP_BELOW_OFFSET := 40.0
+const COST_TIP_ABOVE_OFFSET := 12.0
+const COST_TIP_EDGE_PAD := 4.0
+
 var _game_manager: GameManager
 var _tile_buttons: Array[Button] = []
 var _btn_outlines: Array[TextureRect] = []   # 选中态描边覆盖层（与按钮同序）
@@ -62,6 +69,8 @@ var _open := false
 var _closed_top := -20.0
 var _closed_bottom := 27.0
 var _tween: Tween
+var _tooltip: RichTextLabel = null
+var _hovered_button_index := -1
 
 
 ## SoundManager autoload 访问器（--script 测试模式下全局标识符不可编译，走节点查找）
@@ -150,6 +159,32 @@ func _ready() -> void:
 		_game_manager.tile_selection_changed.connect(_on_selection_changed)
 		# GameManager._ready 完成后再刷一次（时序兜底：万一本节点先于它 _ready）
 		_game_manager.initialized.connect(_refresh_visible)
+
+	_setup_cost_tooltip()
+
+
+## 创建地皮按钮悬浮花费提示标签，挂在抽屉所在 CanvasLayer 下避免被裁剪。
+## _ready 期间父节点可能也在装配子节点，用 call_deferred 延迟添加。
+func _setup_cost_tooltip() -> void:
+	_tooltip = RichTextLabel.new()
+	_tooltip.name = "TileCostTooltip"
+	_tooltip.bbcode_enabled = false
+	_tooltip.fit_content = true
+	_tooltip.scroll_active = false
+	_tooltip.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_tooltip.clip_contents = false
+	_tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tooltip.z_index = 4096
+	_tooltip.add_theme_font_size_override("normal_font_size", COST_TIP_FONT_SIZE)
+	_tooltip.add_theme_color_override("default_color", Color.WHITE)
+	_tooltip.add_theme_color_override("font_outline_color", Color.BLACK)
+	_tooltip.add_theme_constant_override("outline_size", COST_TIP_OUTLINE_SIZE)
+	_tooltip.visible = false
+	var layer := get_parent()
+	if layer != null:
+		layer.call_deferred("add_child", _tooltip)
+	else:
+		call_deferred("add_child", _tooltip)
 
 
 ## 可靠查找 World（GameManager）：当前场景优先，兜底从根按名找（headless 脚本等场景）
@@ -253,11 +288,46 @@ func _on_selection_changed(tile: TileDef) -> void:
 func _on_btn_hover(index: int, hovered: bool) -> void:
 	_btn_hovered[index] = hovered
 	_btn_outlines[index].visible = hovered or _btn_selected[index]   # 悬浮/选中都显示描边
+	_hovered_button_index = index if hovered else -1
+	_update_cost_tooltip()
+
+
+## 更新悬浮花费提示的文本与可见性
+func _update_cost_tooltip() -> void:
+	if _tooltip == null or _game_manager == null:
+		return
+	if _hovered_button_index < 0 or _hovered_button_index >= _tile_buttons.size():
+		_tooltip.visible = false
+		return
+	var tile_id := TILE_IDS[_hovered_button_index]
+	var tile_def := _game_manager.db.get_tile(tile_id)
+	if tile_def == null:
+		_tooltip.visible = false
+		return
+	var count := _game_manager.grid.get_placed_count(tile_id)
+	var cost := TilePricing.placement_cost(tile_def, count)
+	_tooltip.text = "购买一个：%s$" % cost.to_compact_string()
+	_tooltip.visible = true
 
 
 ## 每帧指数跟随：悬停/选中的稳态（缩放+上移）向目标平滑逼近。
 ## 方向反转时没有 tween 重启的初速度突变，鼠标快速进出也丝滑。
 func _process(delta: float) -> void:
+	if _tooltip != null and _tooltip.visible:
+		_tooltip.reset_size()
+		var mouse := get_global_mouse_position()
+		var vp := get_viewport_rect().size
+		var margin := COST_TIP_EDGE_PAD + COST_TIP_OUTLINE_SIZE
+		# 默认显示在鼠标下方；若下方空间不足（抽屉在屏幕底部常见），则显示在鼠标上方
+		var below_y := mouse.y + COST_TIP_BELOW_OFFSET
+		var above_y := mouse.y - _tooltip.size.y - COST_TIP_ABOVE_OFFSET
+		var pos := Vector2(
+			mouse.x - _tooltip.size.x * 0.5,
+			below_y if below_y + _tooltip.size.y + margin <= vp.y else above_y
+		)
+		pos.x = clampf(pos.x, margin, maxf(margin, vp.x - _tooltip.size.x - margin))
+		pos.y = clampf(pos.y, margin, maxf(margin, vp.y - _tooltip.size.y - margin))
+		_tooltip.position = pos
 	for i in _tile_buttons.size():
 		if _btn_pop_active[i]:
 			continue   # 弹跳 tween 正在驱动这个按钮

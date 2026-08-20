@@ -2,11 +2,13 @@ extends Node2D
 class_name TalentGrid
 
 const ResetVfxScript := preload("res://scripts/vfx/reset_vfx.gd")
+const ConfirmDialogClass := preload("res://scripts/ui/confirm_dialog.gd")
+const CONFIRM_SCENE := preload("res://scenes/ui/confirm.tscn")
 
 ## 天赋树控制器：从 defs/talents/*.csv 动态加载（TalentDb），按 (col,row) 实例化 TalentNode。
 ## 前置解锁制：所有前置购买后才显示/可解锁；普通天赋还可被升华天赋门控。
 ## 悬停显示 RichTextLabel 说明框（scenes/vfx/talent_label.tscn 原型）。
-## 当前场景只展示普通天赋树；升华界面（重置后进入 + 新一轮按钮）后续单独设计。
+## 当前场景默认展示普通天赋树；点击"重置·升华"节点完成升华后，自动进入升华天赋树。
 ## 经济接入真实 GameState：购买走 spend_coins/record_*，写回 user://save.json。
 ## 独立运行天赋场景时从存档自载；进程内由 setup_state 注入（未来主场景内嵌用）。
 
@@ -267,10 +269,10 @@ func _node_at(world_pos: Vector2) -> TalentNode:
 
 
 func _click(node: TalentNode) -> void:
-	# "重置·升华"节点：直接升华（无确认）
+	# "重置·升华"节点：弹出确认后继续升华
 	if node.effect_type == "PRESTIGE_RESET":
 		_sm().play_sfx(&"choose_to_reset")
-		_do_ascension()
+		_prompt_ascension()
 		return
 	if node.state == TalentNode.State.PURCHASED:
 		return
@@ -339,19 +341,38 @@ func _sync_purchased() -> void:
 		_purchased[id] = true
 
 
-## 点击"重置·升华"：直接升华。保留永久槽天赋，领取差值，播放升华特效，然后重建普通树并写档。
+## 弹出升华确认对话框：根据当前可结算升华点显示不同提示，确认后再执行升华。
+func _prompt_ascension() -> void:
+	var pending := _state.ascension_points_total().sub(_state.ascension_points_earned)
+	var message: String
+	if pending.is_zero() or pending.is_negative():
+		message = "目前无法获得任何升华点，确定要重置本轮进度吗？"
+	else:
+		message = "继续升华将重置本轮所有进度，可结算为 %s 升华点，是否继续？" % pending.to_compact_string()
+
+	var overlay := CanvasLayer.new()
+	overlay.layer = 90   # 在天赋 UI 之上、场景转场(100)之下
+	var dialog := CONFIRM_SCENE.instantiate() as ConfirmDialogClass
+	overlay.add_child(dialog)
+	get_tree().root.add_child(overlay)
+	var confirmed: bool = await dialog.confirm(message)
+	overlay.queue_free()
+	if confirmed:
+		_do_ascension()
+
+
+## 点击"重置·升华"：领取差值 → 播放升华特效 → 写档 → 转场进入升华天赋场景。
 func _do_ascension() -> void:
-	var preserve := _talent_system.select_preserved_talents(_talent_system.get_permanent_slot_count())
 	var from_earned := _state.ascension_points_earned
-	var gain := _state.apply_ascension(preserve)
+	var gain := _state.apply_ascension()
 	_talent_system.invalidate()
 	print("升华：领取 %s 升华点，进入新一轮" % gain.to_compact_string())
 
-	var from_lifetime := from_earned.mul(from_earned).mul(from_earned).mul(BigNumber.from_int(1_000_000))
+	var from_lifetime := Prestige.threshold_for_points(from_earned)
 	var to_lifetime := _state.lifetime_coins
 	await _play_reset_vfx(from_lifetime, to_lifetime)
-	_build_tree()
 	_persist()
+	SceneTransition.play_to("res://scenes/talent_ascension.tscn")
 
 
 ## 播放升华（重置）特效：把 scenes/vfx/reset.tscn 实例加到根节点顶层，
@@ -381,12 +402,12 @@ func persist() -> void:
 	_persist()
 
 
+## 切换普通/升华天赋树（UI 按钮调用）
 func _update_gold_label() -> void:
 	if gold_label:
-		# 普通天赋树只显示金币数量，不显示“金币：”前缀；升华树保留“升华点：”前缀
-		var prefix := "升华点：" if tree_mode == TreeMode.ASCENSION else ""
+		# 普通天赋树显示“数值$”；升华树只显示数值，不加“升华点：”前缀
 		var suffix := "" if tree_mode == TreeMode.ASCENSION else "$"
-		gold_label.text = "%s%s%s" % [prefix, _current_balance().to_compact_string(), suffix]
+		gold_label.text = "%s%s" % [_current_balance().to_compact_string(), suffix]
 	_update_reset_orb_progress()
 
 
@@ -451,8 +472,9 @@ func _tooltip_text(node: TalentNode) -> String:
 	var text := "[center][b]%s[/b][/center]\n\n" % node.display_name
 	text += node.description
 	if node.effect_type == "PRESTIGE_RESET" and _state != null:
+		var points := Prestige.points_for(_state.lifetime_coins)
 		var remaining := Prestige.coins_to_next_point(_state.lifetime_coins)
-		text += "\n\n下一升华点还需 [b]%s[/b]$" % remaining.to_compact_string()
+		text += "\n\n当前 [b]%s[/b] 升华点 ｜ 下一级还需 [b]%s[/b]$" % [points.to_full_string(), remaining.to_compact_string()]
 	else:
 		text += "\n\n成本：[b]%s[/b] %s" % [node.cost.to_compact_string(), node.currency]
 	if not node.prerequisite_ids.is_empty():

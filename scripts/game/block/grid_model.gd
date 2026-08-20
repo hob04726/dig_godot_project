@@ -44,6 +44,10 @@ var _tile_timers: Dictionary[Vector2i, float] = {}
 ## 这是配置注入而非玩法写操作：不改变网格状态、不发 tile_changed。
 var tile_overrides: Dictionary[StringName, Dictionary] = {}
 
+## 水域沉没返还比例（由 GameManager 根据 meta_water_sink 设置）。
+## 0.0 = 默认吞矿不给钱；>0 则 ore 落水/被推入水时按该比例结算。
+var water_sink_refund_ratio: float = 0.0
+
 ## 本 tick 已升级过的矿石实例（防止多个升级台叠加导致同一矿连升多级）
 var _upgraded_this_tick: Dictionary[int, bool] = {}
 ## 本 tick 已请求生成矿石的格子（防止多个 spawn 地皮同一帧往同一格重复请求）
@@ -150,7 +154,8 @@ func remove_ore(cell: Vector2i, reward_ratio: float = 1.0) -> OreBlock:
 
 
 ## 落地事件：fall 动画结束由 GameManager 上报。
-## 水/火山不让矿停留：水沉没返还 sink_refund_ratio（天赋可提升）；火山视为"击杀"，全额（落地安全网）。
+## 水/火山不让矿停留：水沉没按 _effective_sink_refund 结算（默认 0，购买 meta_water_sink 后 10%，
+## TILE_BEHAVIOR_UP 可进一步覆盖）；火山视为"击杀"，全额（落地安全网）。
 func notify_ore_landed(ore: OreBlock) -> void:
 	if _is_hazard_cell(ore.cell):
 		var ratio := 1.0
@@ -183,55 +188,64 @@ func get_neighbor_cells(cell: Vector2i, include_diagonal := false) -> Array[Vect
 func try_place_tile(cell: Vector2i, tile_def: TileDef) -> MutResult:
 	if tile_def == null:
 		return MutResult.fail(MutResult.Code.UNKNOWN_TILE, "未选择要放置的地皮")
-	if _has_tile(cell):
+	var existing_tile := get_tile_at(cell)
+	if existing_tile != null and existing_tile.behavior != TileDef.Behavior.WATER:
 		return MutResult.fail(MutResult.Code.CELL_OCCUPIED, "位置 %s 已有地块" % cell)
-	if not _has_connected_neighbor(cell):
-		return MutResult.fail(MutResult.Code.NO_ADJACENT_TILE, "只能放置在已连接地块旁边")
+	# 规则：放置只要求目标格是水域（或空地），不需要与中心连通
 	var existing := cells.get(cell) as CellData
 	cells[cell] = CellData.new(existing.above_block if existing != null else null, tile_def)
 	tile_changed.emit(cell)
 	return MutResult.ok()
 
 
-func try_remove_tile(cell: Vector2i) -> MutResult:
+func try_remove_tile(cell: Vector2i, water_tile_def: TileDef = null) -> MutResult:
 	if not _has_tile(cell):
 		return MutResult.fail(MutResult.Code.NO_TILE_HERE, "位置 %s 没有地块" % cell)
-	if cell == CENTER_CELL:
-		return MutResult.fail(MutResult.Code.CENTER_PROTECTED, "中心地块不可删除")
+	var tile := get_tile_at(cell)
+	if tile != null and tile.behavior == TileDef.Behavior.WATER:
+		return MutResult.fail(MutResult.Code.NO_TILE_HERE, "位置 %s 是水域，不可删除" % cell)
 	var cell_data := cells[cell] as CellData
 	if cell_data.above_block != null:
 		return MutResult.fail(MutResult.Code.CELL_OCCUPIED, "地块上方有方块，先移走再删")
-	if not is_tile_group_connected(cell):
-		return MutResult.fail(MutResult.Code.WOULD_DISCONNECT, "删除会让地块群断开")
+	# 规则：中心地块也可删除；删除后若造成其他地块与中心断开，那些地块不再受保护（玩家可自由编辑）
 	# 删除地块时连带移除其上的矿石（不给金币，走 ore_discarded）
 	if ores.has(cell):
 		remove_ore(cell, 0.0)
-	cells.erase(cell)
+	if water_tile_def != null:
+		# 右键删除 = 用指定水域地块替换（可再次花钱替换回来）
+		cells[cell] = CellData.new(null, water_tile_def)
+	else:
+		cells.erase(cell)
 	_tile_timers.erase(cell)
 	tile_changed.emit(cell)
 	return MutResult.ok()
 
 
-## 只读查询：该位置能否放置（悬停提示用，不写模型）
+## 只读查询：该位置能否放置（悬停提示用，不写模型）。
+## 水域格允许替换；空地格也允许（用于无限放置/区域外扩张）。
+## 不再要求与中心连通。
 func can_place_tile(cell: Vector2i) -> bool:
-	if _has_tile(cell):
+	var tile := get_tile_at(cell)
+	if tile != null and tile.behavior != TileDef.Behavior.WATER:
 		return false
-	return _has_connected_neighbor(cell)
+	return true
 
 
-## 只读查询：该位置能否删除（矿石不挡删除，会随地块一起移除）
+## 只读查询：该位置能否删除（矿石不挡删除，会随地块一起移除）。
+## 水域格不可删除；中心地块现在可删除。
 func can_remove_tile(cell: Vector2i) -> bool:
 	if not _has_tile(cell):
 		return false
-	if cell == CENTER_CELL:
+	var tile := get_tile_at(cell)
+	if tile != null and tile.behavior == TileDef.Behavior.WATER:
 		return false
 	var cell_data := cells[cell] as CellData
 	if cell_data.above_block != null:
 		return false
-	return is_tile_group_connected(cell)
+	return true
 
 
-## cell 是否紧邻地块群：要求邻居是与中心连通的地块。
+## cell 是否紧邻地块群：要求邻居是与中心连通的陆地地块。
 ## 孤立块（本就不连中心）不算，防止挂到错误的分支上。
 func _has_connected_neighbor(cell: Vector2i) -> bool:
 	var connected := _center_connected_tiles()
@@ -241,10 +255,11 @@ func _has_connected_neighbor(cell: Vector2i) -> bool:
 	return false
 
 
-## 从中心沿 CARDINALS 洪水填充，返回与中心连通的地块集合（不含 excluded）。
+## 从中心沿 CARDINALS 洪水填充，返回与中心连通的陆地地块集合（不含 excluded）。
+## 水域不参与连通，避免删除后替换为水仍被视为连通。
 func _center_connected_tiles(excluded: Vector2i = Vector2i(999999, 999999)) -> Dictionary[Vector2i, bool]:
 	var seen: Dictionary[Vector2i, bool] = {}
-	if not _has_tile(CENTER_CELL) or CENTER_CELL == excluded:
+	if not _has_land_tile(CENTER_CELL) or CENTER_CELL == excluded:
 		return seen
 	seen[CENTER_CELL] = true
 	var stack: Array[Vector2i] = [CENTER_CELL]
@@ -254,7 +269,7 @@ func _center_connected_tiles(excluded: Vector2i = Vector2i(999999, 999999)) -> D
 			var neighbor := current + dir
 			if neighbor == excluded or seen.has(neighbor):
 				continue
-			if _has_tile(neighbor):
+			if _has_land_tile(neighbor):
 				seen[neighbor] = true
 				stack.append(neighbor)
 	return seen
@@ -277,6 +292,12 @@ func is_tile_group_connected(excluded: Vector2i = Vector2i(999999, 999999)) -> b
 func _has_tile(cell: Vector2i) -> bool:
 	var data := cells.get(cell) as CellData
 	return data != null and data.below_block != null
+
+
+## 陆地地块：有地块且不是水域（水域只作为可替换占位，不参与连通）
+func _has_land_tile(cell: Vector2i) -> bool:
+	var tile := get_tile_at(cell)
+	return tile != null and tile.behavior != TileDef.Behavior.WATER
 
 
 # ==================== 地面行为（地皮阶段） ====================
@@ -349,7 +370,12 @@ func _effective_min_rarity(tile: TileDef) -> int:
 
 
 func _effective_sink_refund(tile: TileDef) -> float:
-	return float(_override_param(tile, &"sink_refund_ratio", tile.sink_refund_ratio if tile != null else 0.1))
+	# 先读 TILE_BEHAVIOR_UP 的 override；无 override 时回退到 GridModel 级基础比例
+	#（由 GameManager 根据 meta_water_sink 设置，默认 0.0，解锁后 0.1）
+	var override = tile_overrides.get(tile.id, {}).get(&"sink_refund_ratio", null) if tile != null else null
+	if override != null:
+		return float(override)
+	return water_sink_refund_ratio
 
 
 ## per-cell 公开只读（GameManager / 测试用）。
