@@ -12,6 +12,7 @@ signal ore_landed(ore: OreBlock, cell: Vector2i)
 signal ore_removed(ore: OreBlock, cell: Vector2i, reward_ratio: float)
 signal ore_discarded(ore: OreBlock, cell: Vector2i)
 signal ore_moved(ore: OreBlock, from_cell: Vector2i, to_cell: Vector2i)
+signal ore_damaged(ore: OreBlock, cell: Vector2i, damage: int, source: StringName)
 signal tile_changed(cell: Vector2i)
 ## spawn 地皮请求生成矿石（视图层负责实例化场景再走 try_spawn_ore）
 signal tile_request_spawn(cell: Vector2i, ore_id: StringName)
@@ -517,14 +518,12 @@ func _conveyor_direction(behavior: TileDef.Behavior) -> Vector2i:
 	return Vector2i.ZERO
 
 
-## TNT 生成器：自身及四邻有空地块时请求生成 TNT（实例化交给视图层）
+## TNT 生成器：只在自身所在格有空位时生成 TNT（实例化交给视图层）
 func _tnt_spawn_tick(cell: Vector2i, tile: TileDef) -> void:
-	for offset in AREA_OFFSETS:
-		var target := cell + offset
-		if not cells.has(target) or ores.has(target) or _spawned_this_tick.has(target):
-			continue
-		_spawned_this_tick[target] = true
-		tile_request_spawn.emit(target, tile.spawn_ore_id)
+	if not cells.has(cell) or ores.has(cell) or _spawned_this_tick.has(cell):
+		return
+	_spawned_this_tick[cell] = true
+	tile_request_spawn.emit(cell, tile.spawn_ore_id)
 
 
 ## 磁吸：自身空着时把邻格已落地的矿吸过来
@@ -547,7 +546,10 @@ func _fire_tick(cell: Vector2i, tile: TileDef) -> void:
 	var ore := ores.get(cell) as OreBlock
 	if ore == null or not ore.has_landed:
 		return
-	if ore.take_damage(int(_effective_damage(tile))):
+	var damage := int(_effective_damage(tile))
+	var died := ore.take_damage(damage)
+	ore_damaged.emit(ore, cell, damage, &"fire")
+	if died:
 		remove_ore(cell)
 
 
@@ -622,5 +624,8 @@ func snapshot_ores() -> Array:
 			"ore": ore.get_def().id,
 			"level": ore.level,
 			"hp": ore.hp,
+			"special": ore.special_type,
+			"special_value_mult": ore.special_value_mult,
+			"special_hp_mult": ore.special_hp_mult,
 		})
 	return list

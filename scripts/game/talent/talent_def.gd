@@ -20,6 +20,8 @@ var cost: BigNumber = null
 @export var row: int = 0
 ## 前置天赋 id 列表（可能多个，全部购买后才显示/可解锁）
 @export var prerequisite_ids: Array[StringName] = []
+## 前置天赋所需等级，与 prerequisite_ids 一一对应；0 或空表示只需购买（>=1）
+@export var prerequisite_ranks: Array[int] = []
 ## 普通天赋的升华前置（普通树节点还受升华天赋门控；空 = 无）
 @export var ascension_prerequisite_id: StringName = &""
 ## 解锁条件（自由文本，如 "coal_mined ≥ 50"）
@@ -31,6 +33,7 @@ var cost: BigNumber = null
 ## 效果数值（原始字符串：可能是 "2" / "0.1" / "5% / 0.1%" 等）
 @export var value: String = ""
 @export var max_rank: int = 1
+@export var cost_mult: int = 5
 @export var group: String = ""
 @export var branch: String = ""
 @export var level: String = ""

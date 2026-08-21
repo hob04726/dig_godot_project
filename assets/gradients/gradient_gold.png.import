@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://blwcpc6lo0f42"
-path="res://.godot/imported/ground_volcano.png-ec94491e090fb2b118bab5b692438580.ctex"
+uid="uid://mbwgusppwoh0"
+path="res://.godot/imported/gradient_gold.png-97b7070e1a6172cc75ccb08fa37e5ade.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/blocks/png/ground_volcano.png"
-dest_files=["res://.godot/imported/ground_volcano.png-ec94491e090fb2b118bab5b692438580.ctex"]
+source_file="res://assets/gradients/gradient_gold.png"
+dest_files=["res://.godot/imported/gradient_gold.png-97b7070e1a6172cc75ccb08fa37e5ade.ctex"]
 
 [params]
 

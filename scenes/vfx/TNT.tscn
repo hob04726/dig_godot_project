@@ -104,7 +104,6 @@ animations = [{
 [node name="TNT" type="Node2D" unique_id=923547183]
 
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=335484767]
-position = Vector2(0, -53)
 sprite_frames = SubResource("SpriteFrames_wyyml")
-frame = 12
-frame_progress = 1.0
+frame = 0
+frame_progress = 0.0

@@ -3,6 +3,9 @@ class_name GameManager
 
 const ABOVE_LAYER_OFFSET := Vector2(0, -8)
 
+# 挖矿进度条在矿石最后一次受伤后多久自动隐藏（秒）
+const MINING_BAR_HIDE_DELAY := 2.0
+
 # 矿石破坏后自由落体重力
 const ORE_GRAVITY := 700.0
 
@@ -23,9 +26,7 @@ var _hovered_cell := Vector2i(999999, 999999)
 var _last_placed_cell := Vector2i(999999, 999999)
 ## 批量删除时记录上一次删除的格子，避免同一格重复删
 var _last_removed_cell := Vector2i(999999, 999999)
-## 长按左键拖动挖矿：记录本趟拖动最后挖过的矿石节点，
-## 只有光标进入新矿（或离开后再回到同一矿）时才触发一次挖掘。
-var _last_drag_mined_ore: OreBlock = null
+
 
 ## 经济状态（数据层唯一写入口）：金币/累计开采/升华点/天赋购买
 var state := GameState.new()
@@ -142,15 +143,18 @@ var _coin_flight_layer: CanvasLayer = null
 ## 不再等金币飞行结束——持续收入时也一直滚动，永不冻结
 const MONEY_ROLL_SPEED := 3.5        # 指数追赶速率（约 1 秒追掉 97% 差额）
 var _money_rolling := false          # 正在滚动（差额未闭合）
-## 当前正在挖的矿上方的进度条
-var _mining_bar: Node2D = null
-var _bar_tween: Tween
-## 进度条当前跟踪的矿石（用于多矿同时被处理时不误关）
-var _mining_bar_ore: OreBlock = null
+## 受伤矿石上方的进度条（每个格子一个，死亡/移走后移除）
+var _mining_bars: Dictionary[Vector2i, Node2D] = {}
 ## 等待粒子全部消失后再释放的金币粒子（{node, particles, wait}）
 var _coin_cleanups: Array = []
 ## 左上角显示的金币值（滚动期间与 state.coins 不同步）
 var _displayed_coins := BigNumber.zero()
+
+## 挖矿范围圈：非放置模式下显示在鼠标周围的空心圆
+const MINING_CIRCLE_RADIUS := 10.0
+var _mining_circle: Node2D = null
+## 当前圈内的矿石：用于“进入圈子的新矿才挖，停在里面不重复挖”
+var _mining_circle_ores: Dictionary[OreBlock, bool] = {}
 
 @onready var _camera: Camera2D = get_node_or_null("Camera2D") as Camera2D
 @onready var _cursor_trail: CursorTrail = get_node_or_null("../CanvasLayer/CursorTrail") as CursorTrail
@@ -177,7 +181,7 @@ var _autosave_timer: Timer
 
 ## TNT 倒计时：由生成器/TNT地皮被触发后 N 秒引爆
 const TNT_FUSE_TIME := 3.0
-const TNT_BLINK_START := 1.2   # 剩余多少秒开始闪烁/脉冲
+const TNT_BLINK_START := 3.0   # 引信一开始即闪烁/脉冲，全程可见
 const TNT_EXPLOSION_RADIUS := 1   # 3×3 范围（中心 ±1）
 const TNT_DAMAGE_PICKAXE_MULT := 5.0
 const TNT_BLINK_SHADER := preload("res://scripts/shaders/tnt_blink.gdshader")
@@ -187,6 +191,16 @@ const TNT_EXPLOSION_SCALE_BASE := 0.25
 const TNT_EXPLOSION_SCALE_CAP := 0.6
 const TNT_EXPLOSION_SCALE_RATE := 0.4
 var _active_tnts: Array = []   # {kind:"ore"|"tile", cell: Vector2i, time_left: float, ore: OreBlock}
+
+const VALUE_BUFF_DURATION := 60.0
+const VALUE_BUFF_MULT := 2
+const HIGH_VALUE_MULT := 5
+const HIGH_VALUE_HP_MULT := 3.0
+
+## 全局价值 buff 期间左上角金币计数器的 wave/rainbow 材质
+const MONEY_RAINBOW_SHADER := preload("res://scripts/shaders/money_rainbow.gdshader")
+var _money_rainbow_material: ShaderMaterial = null
+var _money_rainbow_time: float = 0.0
 
 
 ## SoundManager autoload 访问器：--script 测试模式下 autoload 全局标识符无法编译，
@@ -204,7 +218,7 @@ func _ready() -> void:
 
 	db.load_all()
 	_talent_db.load_all()
-	_talent_system = TalentSystem.new(state, _talent_db)
+	_talent_system = TalentSystem.new(state, _talent_db, db)
 	_mine_rng.randomize()
 	# 主场景 BGM：main1/main2 随机挑一首循环
 	_sm().play_music(&"main1" if randi() % 2 == 0 else &"main2")
@@ -217,6 +231,7 @@ func _ready() -> void:
 	grid.ore_removed.connect(_on_ore_removed)
 	grid.ore_discarded.connect(_on_ore_discarded)
 	grid.ore_moved.connect(_on_ore_moved)
+	grid.ore_damaged.connect(_on_ore_damaged)
 	grid.tile_request_spawn.connect(_on_tile_request_spawn)
 
 	# 落矿不再是全局节拍器：每个空闲格子独立倒计时，见 _update_cell_spawn
@@ -228,24 +243,21 @@ func _ready() -> void:
 	add_child(_autosave_timer)
 	_autosave_timer.start()
 
-	# 挖矿进度条（默认隐藏，挖矿时显示在矿石上方）
-	if progress_bar_prototype != null:
-		_mining_bar = progress_bar_prototype.instantiate() as Node2D
-		above_grid_layer.add_child(_mining_bar)
-		_mining_bar.z_index = 4096   # 画在所有地块/矿石之上（最大合法值）
-		_mining_bar.visible = false
-
 	# RichTextLabel 是 HBoxContainer 的子节点，用视觉偏移做动画才不会被布局覆盖。
 	if money_label != null:
 		money_label.offset_transform_enabled = true
 		money_label.offset_transform_visual_only = true
 		money_label.offset_transform_pivot_ratio = Vector2(0.5, 0.5)
 		_reset_money_dance()
+		# 全局价值 buff 期间金币计数器使用 wave + rainbow shader
+		_money_rainbow_material = ShaderMaterial.new()
+		_money_rainbow_material.shader = MONEY_RAINBOW_SHADER
 
 	_update_money_label()
 	_setup_cursors()
 	_setup_coin_flight_layer()
 	_setup_edge_fires()
+	_setup_mining_circle()
 	# 计数器悬浮提示：鼠标下方跟随显示精确金币数（白字黑描边）；有声望加成时追加一行
 	if money_label != null:
 		var panel := money_label.get_parent().get_parent() as PanelContainer
@@ -316,6 +328,7 @@ func _process(delta: float) -> void:
 	_update_cursor()
 	_batch_place_if_held()
 	_batch_remove_if_held()
+	_update_mining_circle(delta)
 	_batch_mine_if_held()
 	_update_cursor_trail()
 	_update_mining_bar_position()
@@ -326,6 +339,7 @@ func _process(delta: float) -> void:
 	_update_jump_numbers(delta)
 	_update_coin_flights(delta)
 	_update_coin_cleanups(delta)
+	_update_value_buff(delta)
 	_update_fire_breath()
 
 
@@ -441,11 +455,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		var cell := world_to_grid(get_global_mouse_position())
 		match event.button_index:
 			MOUSE_BUTTON_LEFT:
-				# 放置模式：左键放置选中地皮；普通模式：左键挖矿（并启动拖动挖矿记录）
+				# 放置模式：左键放置选中地皮；普通模式：左键对当前格挖一次（范围圈会在 _process 中补 AOE）
 				if selected_tile != null:
 					_place_selected(cell)
 				else:
-					_last_drag_mined_ore = grid.get_ore(cell)
 					_mine_at(cell)
 			MOUSE_BUTTON_RIGHT:
 				# 放置模式下右键删除光标处地块
@@ -512,6 +525,8 @@ func _update_active_tnts(delta: float) -> void:
 	if _active_tnts.is_empty():
 		return
 	var remaining: Array = []
+	var to_explode: Array = []
+	# 第一遍：扣时间、收集本帧到时的条目
 	for entry in _active_tnts:
 		# 有效性检查
 		if entry["kind"] == &"ore":
@@ -525,15 +540,20 @@ func _update_active_tnts(delta: float) -> void:
 		entry["time_left"] -= delta
 		var time_left: float = entry["time_left"]
 		if time_left <= 0.0:
-			if entry["kind"] == &"ore":
-				_tnt_explode(entry["ore"] as OreBlock)
-			else:
-				_tnt_tile_explode(entry["cell"])
-			continue
-		# 最后 1.2 秒开始闪烁+脉冲
-		if time_left <= TNT_BLINK_START:
-			_tnt_update_blink(entry, time_left)
-		remaining.append(entry)
+			to_explode.append(entry)
+		else:
+			if time_left <= TNT_BLINK_START:
+				_tnt_update_blink(entry, time_left)
+			remaining.append(entry)
+	# 第二遍：统一爆炸。即使先爆的 TNT 通过 _tnt_trigger_neighbors 把后爆条目的
+	# 引信重置了，后爆条目仍在本列表中，会正常爆炸。
+	for entry in to_explode:
+		if entry["kind"] == &"ore":
+			var ore := entry["ore"] as OreBlock
+			if ore != null and is_instance_valid(ore):
+				_tnt_explode(ore)
+		else:
+			_tnt_tile_explode(entry["cell"])
 	_active_tnts = remaining
 
 
@@ -606,9 +626,14 @@ func _tnt_damage_area(center: Vector2i, damage: int) -> void:
 			var target_ore := grid.get_ore(target)
 			if target_ore == null or target_ore.get_def().id == &"tnt":
 				continue
-			if target_ore.take_damage(damage):
+			var injured := target_ore.take_damage(damage)
+			# TNT 伤害也要显示跳数和进度条
+			_spawn_damage_number(target_ore.global_position + Vector2(0, -16), damage, false)
+			if injured:
 				target_ore.kill_damage = damage
 				grid.remove_ore(target)
+			else:
+				_update_mining_bar(target_ore)
 
 
 ## 触发 3×3 范围内的 TNT 矿/TNT 地皮，让它们进入 3 秒倒计时
@@ -676,6 +701,8 @@ func _play_tnt_explosion(world_pos: Vector2, damage: int) -> void:
 	if anim == null:
 		explosion.queue_free()
 		return
+	anim.frame = 0
+	anim.frame_progress = 0.0
 	anim.play()
 	anim.animation_finished.connect(func() -> void: explosion.queue_free())
 
@@ -748,6 +775,23 @@ func spawn_ore(cell: Vector2i, ore_def: OreDef, level: int = 1) -> void:
 
 	ore.landed.connect(_on_ore_landed.bind(ore), CONNECT_REFERENCE_COUNTED)
 
+	# 普通矿（非 TNT）有概率变成 3 种特殊矿之一（概率由天赋决定，无天赋时基础为 0）
+	if ore.special_type == OreBlock.SpecialType.NONE and ore.get_def().id != &"tnt":
+		var value_buff_chance := 0.0
+		var high_value_chance := 0.0
+		var fragile_chance := 0.0
+		if _talent_system != null:
+			value_buff_chance = _talent_system.get_special_value_buff_chance()
+			high_value_chance = _talent_system.get_special_high_value_chance()
+			fragile_chance = _talent_system.get_special_fragile_chance()
+		var roll := _mine_rng.randf()
+		if roll < value_buff_chance:
+			ore.make_special(OreBlock.SpecialType.VALUE_BUFF)
+		elif roll < high_value_chance:
+			ore.make_special(OreBlock.SpecialType.HIGH_VALUE_TANK, HIGH_VALUE_MULT, HIGH_VALUE_HP_MULT)
+		elif roll < fragile_chance:
+			ore.make_special(OreBlock.SpecialType.FRAGILE)
+
 
 func _on_ore_landed(ore: OreBlock) -> void:
 	grid.notify_ore_landed(ore)
@@ -758,7 +802,6 @@ func _on_ore_landed(ore: OreBlock) -> void:
 func _mine_at(cell: Vector2i) -> void:
 	var ore := grid.get_ore(cell)
 	if ore == null or not ore.has_landed:
-		_hide_mining_bar()   # 点空处/未落地矿：收起进度条
 		return
 	# 稿子伤害管线：基础 + 天赋 flat，grass 等倍率（effective），暴击乘区（TalentSystem）
 	var hit := _talent_system.hit_damage_details(
@@ -770,6 +813,9 @@ func _mine_at(cell: Vector2i) -> void:
 	_spawn_damage_number(ore.global_position + Vector2(0, -16), damage, hit["crit"])
 	if ore.take_damage(damage):
 		ore.kill_damage = damage   # 最后一击伤害 → 决定飞出力度
+		# 价值 buff 矿被玩家挖死：触发 60 秒全局价值翻倍
+		if ore.special_type == OreBlock.SpecialType.VALUE_BUFF:
+			state.value_buff_time_left = VALUE_BUFF_DURATION
 		state.increment_ore_mined(ore.get_def().id)   # 玩家挖死才计开采
 		_sm().play_sfx(&"broke_a_ore")
 		grid.remove_ore(cell)  # 发 ore_removed → 结算金币 + 破坏特效
@@ -805,8 +851,10 @@ func _spawn_money_number(world_pos: Vector2, amount: BigNumber, prefix: String, 
 
 
 ## 挖矿伤害跳数：弹出伤害数字，动线与矿石破坏一致——随机 -45°~45° 向上抛出 + 重力自由落体
-## （速度 = 基础 + 伤害×系数，与 _launch_ore 同一套参数）。下落过程中渐隐后消失。
+## （速度固定，不再随伤害大小变化）。下落过程中渐隐后消失。
 ## 暴击：彩虹变色 + 旋转晃动。全部在 _update_jump_numbers 逐帧积分，不用 Tween。
+const DAMAGE_NUMBER_SPEED := 160.0
+
 func _spawn_damage_number(world_pos: Vector2, amount: int, is_crit: bool) -> void:
 	if jump_number_prototype == null:
 		return
@@ -824,13 +872,12 @@ func _spawn_damage_number(world_pos: Vector2, amount: int, is_crit: bool) -> voi
 		label.add_theme_color_override("font_outline_color", Color(0.08, 0.06, 0.12, 1.0))
 		label.add_theme_constant_override("outline_size", 5)
 	node.scale = Vector2(0.1, 0.1)
-	# 与矿石破坏同款动线：力度 = 基础 + 伤害×系数，随机 -45°~45° 向上
+	# 伤害跳数：固定初速度，随机 -45°~45° 向上
 	var a := deg_to_rad(randf_range(-45.0, 45.0))
-	var speed := ore_launch_base + amount * ore_launch_per_damage
-	var velocity := Vector2(sin(a), -cos(a)) * speed
+	var velocity := Vector2(sin(a), -cos(a)) * DAMAGE_NUMBER_SPEED
 	_jump_numbers.append({
 		"node": node, "label": label, "velocity": velocity,
-		"time": 0.0, "crit": is_crit,
+		"time": 0.0, "crit": is_crit, "position": world_pos,
 	})
 
 
@@ -845,18 +892,25 @@ func _update_jump_numbers(delta: float) -> void:
 		entry["time"] += delta
 		velocity.y += ORE_GRAVITY * delta
 		entry["velocity"] = velocity
-		node.global_position += velocity * delta
+		var base_pos: Vector2 = entry["position"] + velocity * delta
+		entry["position"] = base_pos
 		# 前 0.1s 从 0.1 放大到 1（弹入）
 		var grow := clampf(entry["time"] / 0.1, 0.0, 1.0)
 		node.scale = Vector2.ONE * (0.1 + 0.9 * grow)
 		if entry["crit"]:
-			# 彩色：label 循环 hue；晃动：快速旋转
+			# 彩虹 + 抖动 + 快速旋转
 			var label: RichTextLabel = entry["label"]
 			if label != null:
 				label.modulate = Color.from_hsv(fmod(entry["time"] * 6.0, 1.0), 1.0, 1.0)
 			node.rotation = sin(entry["time"] * 40.0) * 0.12
+			var shake := Vector2(
+				sin(entry["time"] * 80.0),
+				cos(entry["time"] * 90.0)
+			) * 3.0
+			node.global_position = base_pos + shake
 		else:
 			node.rotation = 0.0
+			node.global_position = base_pos
 		# 下落（速度向下）后渐隐，消失即释放
 		if velocity.y > 0.0:
 			node.modulate.a -= delta * 2.5
@@ -876,15 +930,31 @@ func _on_ore_removed(ore: OreBlock, _cell: Vector2i, reward_ratio: float = 1.0) 
 	# 完整结算管线：settle × 矿价值 × 地块协同 × 全局矿石价值 × reward_ratio × 全局金币 × 声望倍率
 	var gained := _talent_system.compute_coin_gain(
 		grid.settle_value(ore), ore.get_def().id, grid.get_placed_counts(), reward_ratio)
+	# 全局价值 buff：挖掉 VALUE_BUFF 矿后 60 秒内所有矿值翻倍
+	if state.value_buff_time_left > 0.0 and not gained.is_zero():
+		gained = gained.mul(BigNumber.from_int(VALUE_BUFF_MULT))
 	state.add_coins(gained)
+	# 火焰特效：10 秒滚动窗口统计所有挖矿进账，不论矿石从哪条边飞出/沉没
+	_record_income(gained, &"bottom")
 	print("+%s 金币（总计 %s）" % [gained.to_compact_string(), state.coins.to_compact_string()])
+	var rainbow_coin := ore.special_type == OreBlock.SpecialType.HIGH_VALUE_TANK
 	if reward_ratio < 1.0:
 		# 水沉没（返还 10%）：不弹射，慢慢下沉渐隐，消失后在水面开金币粒子
 		_sink_ore(ore, gained)
 	else:
 		_play_explosion(ore.global_position, ore)
-		_launch_ore(ore, gained, ore.kill_damage)
-	_hide_mining_bar(ore)   # 只有当前跟踪的矿死亡才收起进度条
+		_launch_ore(ore, gained, ore.kill_damage, rainbow_coin)
+	_hide_mining_bar(ore.cell)   # 移除该矿的进度条
+
+
+## 地块持续伤害（熔岩等）：显示跳数和进度条。
+## 若该伤害刚好把矿打死，remove_ore 会在下一刻触发 _on_ore_removed 来隐藏条。
+func _on_ore_damaged(ore: OreBlock, _cell: Vector2i, damage: int, _source: StringName) -> void:
+	if ore == null or not is_instance_valid(ore):
+		return
+	_spawn_damage_number(ore.global_position + Vector2(0, -16), damage, false)
+	if ore.hp > 0:
+		_update_mining_bar(ore)
 
 
 ## 删除地块时连带移除的矿（不给金币）：也播爆炸+飞出（无金币粒子）。
@@ -895,6 +965,9 @@ func _on_ore_discarded(ore: OreBlock, _cell: Vector2i) -> void:
 		# TNT 已播过爆炸，这里只做一个“炸碎后渐隐”的短动画再释放
 		ore.modulate = Color.WHITE
 		ore.z_index = 4000
+		# 去掉引信闪烁 shader，避免脉冲缩放干扰渐隐动画
+		ore.base_material = null
+		ore.sprite.material = null
 		var tween := create_tween().set_parallel(true)
 		tween.tween_property(ore, "scale", ore.scale * 1.4, 0.18)
 		tween.tween_property(ore, "modulate:a", 0.0, 0.18)
@@ -902,7 +975,7 @@ func _on_ore_discarded(ore: OreBlock, _cell: Vector2i) -> void:
 	else:
 		_play_explosion(ore.global_position, ore)
 		_launch_ore(ore, BigNumber.zero(), ore.kill_damage)
-	_hide_mining_bar(ore)   # 只有当前跟踪的矿死亡才收起进度条
+	_hide_mining_bar(ore.cell)   # 移除该矿的进度条
 
 
 ## 把指定 TNT 矿从活动倒计时列表移除（挖掉/移除/爆炸时调用）
@@ -916,74 +989,117 @@ func _untrack_tnt(ore: OreBlock) -> void:
 			break
 
 
-## 更新/显示矿石上方的挖矿进度条（进度 = 已挖比例）。
-## 首次出现时弹性缩放"弹出"。
-## 每帧让进度条跟随当前跟踪的矿石（传送带/推拉的矿会移动）
+## 更新所有活动进度条的位置，并清理已失效/矿石已消失的条目。
 func _update_mining_bar_position() -> void:
-	if _mining_bar == null or not _mining_bar.visible:
+	if _mining_bars.is_empty():
 		return
-	if _mining_bar_ore == null or not is_instance_valid(_mining_bar_ore):
-		_hide_mining_bar()
-		return
-	_mining_bar.global_position = _mining_bar_ore.global_position + Vector2(0, -26)
+	var to_remove: Array[Vector2i] = []
+	for cell: Vector2i in _mining_bars.keys():
+		var bar: Node2D = _mining_bars[cell]
+		if bar == null or not is_instance_valid(bar):
+			to_remove.append(cell)
+			continue
+		# 安全兜底：进度条 scale 异常时立即复位并停掉动画
+		if bar.scale.x > 2.0 or bar.scale.y > 2.0 or bar.scale.x < 0.01 or bar.scale.y < 0.01:
+			bar.scale = Vector2.ONE
+			var old: Tween = null
+			if bar.has_meta(&"tween"):
+				old = bar.get_meta(&"tween") as Tween
+			if old != null and old.is_valid():
+				old.kill()
+		var ore := grid.get_ore(cell)
+		if ore == null or not is_instance_valid(ore):
+			# 避免每帧重复触发收起动画导致条永远缩不完
+			if not (bar.has_meta(&"state") and bar.get_meta(&"state") == &"out"):
+				_pop_out_mining_bar(bar, cell)
+			continue
+		# 超过一定时间没再受伤：自动收起进度条
+		if ore.last_damage_time > 0.0:
+			var now := Time.get_ticks_msec() / 1000.0
+			if now - ore.last_damage_time > MINING_BAR_HIDE_DELAY:
+				if bar.visible and not (bar.has_meta(&"state") and bar.get_meta(&"state") == &"out"):
+					_pop_out_mining_bar(bar, cell)
+					continue
+		if bar.visible:
+			bar.global_position = ore.global_position + Vector2(0, -26)
+	for cell: Vector2i in to_remove:
+		_mining_bars.erase(cell)
 
 
+## 获取或创建指定格子的进度条实例。
+func _get_or_create_mining_bar(cell: Vector2i) -> Node2D:
+	var bar := _mining_bars.get(cell) as Node2D
+	if bar != null and is_instance_valid(bar):
+		return bar
+	bar = progress_bar_prototype.instantiate() as Node2D
+	above_grid_layer.add_child(bar)
+	bar.z_index = 4096   # 画在所有地块/矿石之上
+	bar.visible = false
+	bar.scale = Vector2.ONE
+	_mining_bars[cell] = bar
+	return bar
+
+
+## 更新/显示矿石上方的挖矿进度条（进度 = 已挖比例）。
+## 每个受伤的矿石都有自己独立的进度条。
 func _update_mining_bar(ore: OreBlock) -> void:
-	if _mining_bar == null:
+	if progress_bar_prototype == null:
 		return
-	var same_ore := _mining_bar_ore == ore
-	# 需要重新弹入的情况：当前隐藏 / 正在做收起动画 / 切换到了新矿且不在正常显示状态
-	var needs_pop_in := not _mining_bar.visible
-	if not same_ore and _bar_tween != null and _bar_tween.is_valid():
-		needs_pop_in = true
-	_mining_bar_ore = ore
-	_mining_bar.global_position = ore.global_position + Vector2(0, -26)
-	_mining_bar.visible = true
+	var bar := _get_or_create_mining_bar(ore.cell)
+	var is_popping_out: bool = bar.has_meta(&"state") and bar.get_meta(&"state") == &"out"
+	var needs_pop_in: bool = not bar.visible or is_popping_out
+	bar.visible = true
+	bar.global_position = ore.global_position + Vector2(0, -26)
 	var mined := 1.0 - float(ore.hp) / float(ore.get_max_hp())
-	_mining_bar.set_progress(clampf(mined, 0.0, 1.0))
+	bar.set_progress(clampf(mined, 0.0, 1.0))
 	if needs_pop_in:
-		if _bar_tween != null:
-			_bar_tween.kill()
-		_pop_in()
+		_pop_in_mining_bar(bar)
+	# 刷新受伤计时：显式调用更新进度条也视为一次“关注”，防止从未受过伤的矿条永远不消失
+	if ore.last_damage_time <= 0.0:
+		ore.last_damage_time = Time.get_ticks_msec() / 1000.0
 
 
-## 收起进度条（先弹性缩小再隐藏）。
-## 传入 ore 时，只有当前跟踪的矿石是该 ore 才会收起，避免 A 矿死亡把正在挖的 B 矿条关掉。
-func _hide_mining_bar(ore: OreBlock = null) -> void:
-	if _mining_bar == null or not _mining_bar.visible:
+## 收起指定格子的进度条（先弹性缩小再隐藏并释放）。
+func _hide_mining_bar(cell: Vector2i) -> void:
+	var bar := _mining_bars.get(cell) as Node2D
+	if bar == null or not is_instance_valid(bar):
 		return
-	if ore != null and ore != _mining_bar_ore:
-		return
-	# 已经在收起动画中（_mining_bar_ore 已清空且 tween 仍在运行），不要每帧重启
-	if _mining_bar_ore == null and _bar_tween != null and _bar_tween.is_valid():
-		return
-	_mining_bar_ore = null
-	if _bar_tween != null:
-		_bar_tween.kill()
-	_pop_out()
+	_pop_out_mining_bar(bar, cell)
 
 
-## 出现：从 0.2 弹到 1（带回弹感）
-func _pop_in() -> void:
-	if _bar_tween != null:
-		_bar_tween.kill()
-	_mining_bar.scale = Vector2(0.2, 0.2)
-	_bar_tween = create_tween()
-	_bar_tween.tween_property(_mining_bar, "scale", Vector2.ONE, 0.18) \
-		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+## 单个进度条出现：从 0.2 弹到 1
+func _pop_in_mining_bar(bar: Node2D) -> void:
+	var old: Tween = null
+	if bar.has_meta(&"tween"):
+		old = bar.get_meta(&"tween") as Tween
+	if old != null and old.is_valid():
+		old.kill()
+	bar.visible = true
+	bar.scale = Vector2(0.2, 0.2)
+	bar.set_meta(&"state", &"in")
+	var t := bar.create_tween()
+	t.tween_property(bar, "scale", Vector2.ONE, 0.18) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	bar.set_meta(&"tween", t)
 
 
-## 消失：弹到 0.1 后隐藏
-func _pop_out() -> void:
-	if _bar_tween != null:
-		_bar_tween.kill()
-	_bar_tween = create_tween()
-	_bar_tween.tween_property(_mining_bar, "scale", Vector2(0.1, 0.1), 0.12) \
-		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
-	_bar_tween.tween_callback(func() -> void:
-		if _mining_bar != null:
-			_mining_bar.visible = false
+## 单个进度条消失：弹到 0.1 后隐藏并释放
+func _pop_out_mining_bar(bar: Node2D, cell: Vector2i) -> void:
+	var old: Tween = null
+	if bar.has_meta(&"tween"):
+		old = bar.get_meta(&"tween") as Tween
+	if old != null and old.is_valid():
+		old.kill()
+	bar.set_meta(&"state", &"out")
+	var t := bar.create_tween()
+	t.tween_property(bar, "scale", Vector2(0.1, 0.1), 0.12) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	t.tween_callback(func() -> void:
+		bar.visible = false
+		bar.queue_free()
+		_mining_bars.erase(cell)
 	)
+	bar.set_meta(&"tween", t)
 
 
 # ==================== 矿石破坏特效 ====================
@@ -1044,7 +1160,7 @@ func _explosion_animation_pool(names: PackedStringArray, crystal: bool) -> Array
 ## 注意：矿石贴图透明边很多（如 256×352 里矿石只画在底部），直接转 sprite 会绕
 ## 贴图中心甩出诡异弧线——这里把旋转支点（sprite.offset）挪到 alpha 包围盒中心
 ## （矿石视觉中心），并把节点位置反向补偿同样距离：轨迹与原来完全一致，原地自转。
-func _launch_ore(ore: OreBlock, gained: BigNumber, kill_damage: int) -> void:
+func _launch_ore(ore: OreBlock, gained: BigNumber, kill_damage: int, rainbow_coin: bool = false) -> void:
 	var a := deg_to_rad(randf_range(-45.0, 45.0))
 	var speed := ore_launch_base + kill_damage * ore_launch_per_damage
 	var velocity := Vector2(sin(a), -cos(a)) * speed
@@ -1052,7 +1168,7 @@ func _launch_ore(ore: OreBlock, gained: BigNumber, kill_damage: int) -> void:
 	_center_ore_pivot(ore)
 	ore.z_index = 4000   # 飞到最上层（CanvasItem 上限 4096 内）
 	ore.modulate = Color.WHITE   # 去掉悬停/下落残留的染色
-	_flying_ores.append({"ore": ore, "velocity": velocity, "gained": gained, "spin": spin})
+	_flying_ores.append({"ore": ore, "velocity": velocity, "gained": gained, "spin": spin, "rainbow_coin": rainbow_coin})
 
 
 ## 贴图 alpha 包围盒中心缓存（避免每次发射都 get_image）
@@ -1117,8 +1233,9 @@ func _update_flying_ores(delta: float) -> void:
 			still.append(entry)
 			continue
 		var gained: BigNumber = entry["gained"]
+		var rainbow_coin: bool = entry.get("rainbow_coin", false)
 		if not gained.is_zero():
-			_play_coin_and_count(exit_pos, gained, edge_dir)
+			_play_coin_and_count(exit_pos, gained, edge_dir, rainbow_coin)
 		ore.queue_free()
 	_flying_ores = still
 
@@ -1126,26 +1243,20 @@ func _update_flying_ores(delta: float) -> void:
 ## 在落点播金币粒子：时长 = 价值决定；同时金币数字在该时长内跳数。
 ## dir 是粒子发射方向（侧面出屏就朝屏幕内喷）。
 ## 同时产生"金币飞向计数板"效果：边缘跳数 + 若干拖尾（见 _spawn_coin_flight）。
-func _play_coin_and_count(pos: Vector2, gained: BigNumber, dir := Vector2.UP) -> void:
+func _play_coin_and_count(pos: Vector2, gained: BigNumber, dir := Vector2.UP, rainbow_coin: bool = false) -> void:
 	var duration := _coin_duration(gained)
 	_sm().play_sfx(&"coin_particle")   # 金币爆发
-	_spawn_coin_flight(pos, gained, dir)
-	# 出屏方向 → 屏幕边：价值记进该边的 10 秒窗口（火焰分档用）。
-	# 当前只注册并显示底边火焰，其它边会被 _record_income 安全忽略。
-	# dir 是"朝屏幕内"的方向：UP=从底边飞出，DOWN=顶边，LEFT=右边，RIGHT=左边
-	var edge := &"bottom"
-	if dir == Vector2.DOWN:
-		edge = &"top"
-	elif dir == Vector2.LEFT:
-		edge = &"right"
-	elif dir == Vector2.RIGHT:
-		edge = &"left"
-	_record_income(gained, edge)
+	_spawn_coin_flight(pos, gained, dir, rainbow_coin)
+	# 火焰计数已改为“10 秒总进账”，在 ore 被挖掉/结算时直接记录，
+	# 这里只负责出屏瞬间的视觉金币效果，不再按出屏方向记窗口。
 	if coin_prototype != null:
 		var coin := coin_prototype.instantiate() as Node2D
-		above_grid_layer.add_child(coin)
+		# 金币爆发粒子放到 below_grid_layer 并置负 z_index，确保画在所有地皮/矿石之下，
+		# 仍保持在背景层之上。地块 z_index 最低可到 -4096（Godot 下限），这里取同样下限
+		# 保证再低的地块也不会被粒子遮挡。
+		below_grid_layer.add_child(coin)
 		coin.global_position = pos
-		coin.z_index = 4000
+		coin.z_index = -4096
 		var particles := coin.get_node_or_null("GPUParticles2D") as GPUParticles2D
 		if particles:
 			particles.one_shot = true          # 一次性爆发，别一直喷
@@ -1179,7 +1290,7 @@ func _play_coin_and_count(pos: Vector2, gained: BigNumber, dir := Vector2.UP) ->
 ## 产生"金币飞向计数板"（主 UI 屏幕空间）：一个边缘跳数（沿出屏边缘切向飞出，放大后渐隐）
 ## + 若干拖尾（从两侧 20°~30° 射出，随后被 max(增长拉力, 距离反比引力 K/距离) 吸向金币计数板，汇聚后消失）。
 ## 返回是否产生了飞行（false 时调用方立即跳数，如金币为 0）。
-func _spawn_coin_flight(pos: Vector2, gained: BigNumber, dir: Vector2) -> bool:
+func _spawn_coin_flight(pos: Vector2, gained: BigNumber, dir: Vector2, rainbow_coin: bool = false) -> bool:
 	if gained.is_zero() or _coin_flight_layer == null:
 		return false
 	var screen_pos := _screen_from_world(pos)
@@ -1187,7 +1298,7 @@ func _spawn_coin_flight(pos: Vector2, gained: BigNumber, dir: Vector2) -> bool:
 	var view := get_viewport().get_visible_rect().size
 	screen_pos.x = clampf(screen_pos.x, 36.0, view.x - 36.0)
 	screen_pos.y = clampf(screen_pos.y, 36.0, view.y - 36.0)
-	_spawn_edge_number(screen_pos, gained, dir)
+	_spawn_edge_number(screen_pos, gained, dir, rainbow_coin)
 	var counter := _money_counter_screen_pos()
 	for i in _coin_trail_count(gained):
 		_spawn_coin_trail(screen_pos, dir, counter)
@@ -1196,7 +1307,7 @@ func _spawn_coin_flight(pos: Vector2, gained: BigNumber, dir: Vector2) -> bool:
 
 ## 边缘跳数（屏幕空间）：显示本次金币额，沿出屏边缘的切向（正上/正下/正左/正右）直线飞出，
 ## 快速放大后渐隐。
-func _spawn_edge_number(pos: Vector2, gained: BigNumber, dir: Vector2) -> void:
+func _spawn_edge_number(pos: Vector2, gained: BigNumber, dir: Vector2, rainbow: bool = false) -> void:
 	var proto := coin_number_prototype if coin_number_prototype != null else jump_number_prototype
 	if proto == null or _coin_flight_layer == null:
 		return
@@ -1217,8 +1328,8 @@ func _spawn_edge_number(pos: Vector2, gained: BigNumber, dir: Vector2) -> void:
 	if dir == Vector2.DOWN:
 		fly_dir = Vector2.DOWN
 	_coin_flights.append({
-		"kind": "num", "node": node, "velocity": fly_dir * COIN_NUM_SPEED,
-		"time": 0.0, "target": Vector2.ZERO, "pull": 0.0,
+		"kind": "num", "node": node, "label": label, "velocity": fly_dir * COIN_NUM_SPEED,
+		"time": 0.0, "target": Vector2.ZERO, "pull": 0.0, "rainbow": rainbow,
 	})
 
 
@@ -1293,6 +1404,11 @@ func _process_coin_flights(delta: float) -> void:
 			node.global_position += velocity * delta
 			var grow := clampf(time / 0.12, 0.0, 1.0)
 			node.scale = Vector2.ONE * (0.1 + 0.9 * grow)
+			# 高价值坦克矿的飞出金币跳数使用彩虹色
+			if e.get("rainbow", false):
+				var label: RichTextLabel = e.get("label")
+				if label != null:
+					label.modulate = Color.from_hsv(fmod(time * 2.0, 1.0), 1.0, 1.0)
 			if time > 0.6:
 				node.modulate.a -= delta * 2.0
 			alive = node.modulate.a > 0.02
@@ -1525,7 +1641,8 @@ func _update_money_label() -> void:
 	_refresh_money_text()
 
 
-## 收入记录 + 冒火判定：矿从底边出屏时，价值记进底边 10 秒滚动窗口；
+## 收入记录 + 冒火判定：挖矿获得金币时，价值记进底边 10 秒滚动窗口；
+## 窗口统计的是最近 10 秒总进账，不再区分矿石从哪条边飞出。
 ## 窗口收入按阈值分档后，火焰沿底边显示：
 ## >1e3 红 / >1e6 蓝 / >1e13 紫 / >1e20 黑 / >1e28 呼吸变色。
 func _record_income(gained: BigNumber, edge: StringName) -> void:
@@ -1573,6 +1690,19 @@ func _trigger_fire(edge: StringName, tier: int) -> void:
 
 func _on_fire_faded(edge: StringName) -> void:
 	_fire_tiers[edge] = 0
+
+
+## 全局价值 buff 倒计时 + 左上角金币计数器 wave/rainbow 效果切换
+func _update_value_buff(delta: float) -> void:
+	if state.value_buff_time_left > 0.0:
+		state.value_buff_time_left = maxf(state.value_buff_time_left - delta, 0.0)
+		_money_rainbow_time += delta
+		if money_label != null and _money_rainbow_material != null:
+			money_label.material = _money_rainbow_material
+			_money_rainbow_material.set_shader_parameter("time", _money_rainbow_time)
+	else:
+		if money_label != null and money_label.material == _money_rainbow_material:
+			money_label.material = null
 
 
 ## 第 5 档呼吸火：颜色沿色环循环（约 4 秒一圈），火舌与根部错开 0.15 相位；各边独立
@@ -1631,6 +1761,29 @@ func _place_edge_fire(edge: StringName, pos: Vector2, strip_size: Vector2, deg: 
 		"aspect", strip_size.x / strip_size.y)
 
 
+## 初始化鼠标周围的挖矿范围圈（空心圆）
+func _setup_mining_circle() -> void:
+	if above_grid_layer == null:
+		return
+	var circle_script := load("res://scripts/game/mining_circle.gd") as GDScript
+	var circle := Node2D.new()
+	circle.set_script(circle_script)
+	circle.name = "MiningCircle"
+	circle.set("radius", _get_mining_circle_radius())
+	circle.z_index = 3000
+	circle.visible = false
+	_mining_circle = circle
+	above_grid_layer.add_child(_mining_circle)
+
+
+## 当前挖矿范围半径 = 基础 10px + 天赋 pickaxe_range 加成
+func _get_mining_circle_radius() -> float:
+	var bonus := 0.0
+	if _talent_system != null:
+		bonus = float(_talent_system.get_pickaxe_aoe_radius())
+	return MINING_CIRCLE_RADIUS + bonus
+
+
 # ==================== 存档 ====================
 
 ## 有存档 → 恢复 state + 网格；无存档 → 新游戏初始化。
@@ -1686,6 +1839,12 @@ func _restore_grid(data: Dictionary) -> void:
 		spawn_ore(cell, ore_def, int(entry["level"]))
 		var ore := grid.get_ore(cell)
 		if ore != null:
+			# 恢复特殊矿类型（旧档缺字段则保持普通矿）
+			if entry.has("special"):
+				ore.special_type = int(entry["special"]) as OreBlock.SpecialType
+				ore.special_value_mult = float(entry.get("special_value_mult", 1.0))
+				ore.special_hp_mult = float(entry.get("special_hp_mult", 1.0))
+				ore._tint_by_special_type()
 			ore.hp = int(entry["hp"])
 			ore.has_landed = true
 	for entry: Dictionary in data.get("tnt_fuses", []):
@@ -1947,26 +2106,61 @@ func _batch_remove_if_held() -> void:
 	_remove_tile_at(_hovered_cell)
 
 
-## 长按左键拖动挖矿：按住左键滑过矿石，光标进入新矿（或离开后再划回同一矿）时触发一次挖掘。
-## 停在同一矿上不动不会重复挖；滑入→滑出→再滑入即可连续挖同一矿。
+## 长按左键范围挖矿：鼠标周围显示一个空心圆，按住左键时圆圈内新进入的已落地矿石会被挖掘。
+## 停在同一矿上不动不会重复挖；把圆移开再移回即可再次挖掘。
 func _batch_mine_if_held() -> void:
 	if selected_tile != null:
 		return
 	if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-		_last_drag_mined_ore = null
+		_mining_circle_ores.clear()
 		return
-	# 鼠标悬停在 UI 控件上时不批量挖，并把记录清空，这样回到矿石时会重新触发一次
+	# 鼠标悬停在 UI 控件上时不挖，并把记录清空
 	if get_viewport().gui_get_hovered_control() != null:
-		_last_drag_mined_ore = null
+		_mining_circle_ores.clear()
 		return
-	var ore := _hovered_ore()
-	if ore == null or not ore.has_landed:
-		_last_drag_mined_ore = null
+	if _mining_circle == null:
 		return
-	if ore == _last_drag_mined_ore:
+
+	var center := _mining_circle.global_position
+	var radius := _get_mining_circle_radius()
+	var current: Dictionary[OreBlock, bool] = {}
+	for ore: OreBlock in grid.ores.values():
+		if ore == null or not is_instance_valid(ore) or not ore.has_landed:
+			continue
+		if _point_distance_to_ore_sprite(center, ore) <= radius:
+			current[ore] = true
+
+	# 只挖这次新进入圈的矿
+	for ore: OreBlock in current.keys():
+		if not _mining_circle_ores.has(ore):
+			_mine_at(ore.cell)
+	_mining_circle_ores = current
+
+
+## 鼠标点到矿石精灵包围盒的最近距离：矿石贴图中心偏上，只看节点中心会漏掉上半部分。
+func _point_distance_to_ore_sprite(point: Vector2, ore: OreBlock) -> float:
+	var sprite := ore.sprite
+	if sprite == null or sprite.texture == null:
+		return ore.global_position.distance_to(point)
+	var half_size := sprite.texture.get_size() * sprite.scale * 0.5
+	var local := point - sprite.global_position
+	var closest := local.clamp(-half_size, half_size)
+	var dist := (local - closest).length()
+	return dist
+
+
+## 更新挖矿范围圈的位置、半径和可见性：非放置模式且不在 UI 上时显示在鼠标位置。
+func _update_mining_circle(_delta: float) -> void:
+	if _mining_circle == null:
 		return
-	_last_drag_mined_ore = ore
-	_mine_at(ore.cell)
+	var active := selected_tile == null and get_viewport().gui_get_hovered_control() == null
+	_mining_circle.visible = active
+	if active:
+		_mining_circle.global_position = get_global_mouse_position()
+	var radius := _get_mining_circle_radius()
+	if _mining_circle.get("radius") != radius:
+		_mining_circle.set("radius", radius)
+		_mining_circle.queue_redraw()
 
 
 ## 放置模式下给格子高亮指针（世界内 AnimatedSprite2D）染色：绿=可放且钱够、红=钱不够、橙=位置不可放。

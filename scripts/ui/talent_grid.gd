@@ -4,6 +4,8 @@ class_name TalentGrid
 const ResetVfxScript := preload("res://scripts/vfx/reset_vfx.gd")
 const ConfirmDialogClass := preload("res://scripts/ui/confirm_dialog.gd")
 const CONFIRM_SCENE := preload("res://scenes/ui/confirm.tscn")
+const CHARGE_VFX_SCENE := preload("res://scenes/vfx/charge.tscn")
+const WhiteFade := preload("res://scripts/ui/white_fade.gd")
 
 ## 天赋树控制器：从 defs/talents/*.csv 动态加载（TalentDb），按 (col,row) 实例化 TalentNode。
 ## 前置解锁制：所有前置购买后才显示/可解锁；普通天赋还可被升华天赋门控。
@@ -35,8 +37,11 @@ var _defs: Array[TalentDef] = []
 var _def_names: Dictionary[StringName, String] = {}
 var _nodes: Array[TalentNode] = []
 var _nodes_by_id: Dictionary[StringName, TalentNode] = {}
-var _purchased: Dictionary[StringName, bool] = {}
+var _purchased: Dictionary[StringName, int] = {}
 var _hovered: TalentNode = null
+
+## 解锁条件正则：匹配 "dirt_mined ≥ 50"
+var _unlock_condition_re := RegEx.new()
 
 var _tooltip: PanelContainer = null
 var _tooltip_richtext: RichTextLabel = null
@@ -58,6 +63,7 @@ func _ready() -> void:
 		push_warning("talent_grid: 缺 node_scene")
 		return
 	_db.load_all()
+	_unlock_condition_re.compile(r"^(\w+)_mined\s*≥\s*(\d+)$")
 	# 经济接入：进程内注入优先；独立运行从存档自载
 	if _state == null:
 		_state = GameState.new()
@@ -195,6 +201,7 @@ func _build_tree() -> void:
 	for def in _defs:
 		var node := node_scene.instantiate() as TalentNode
 		node.setup(def)
+		_update_node_rank_and_cost(node)
 		# 以中心重置节点(0,0)为世界原点，相机默认对准它
 		node.position = Vector2(def.col, def.row) * cell_size
 		node.visible = false   # 先全隐藏，_refresh_all 按前置解锁显示
@@ -228,11 +235,14 @@ func _refresh_all(animated := true) -> void:
 
 
 func _is_revealed(node: TalentNode) -> bool:
-	for pid in node.prerequisite_ids:
-		if not _purchased.get(pid, false):
+	for i in node.prerequisite_ids.size():
+		var pid := node.prerequisite_ids[i]
+		var req_rank := node.prerequisite_ranks[i] if i < node.prerequisite_ranks.size() else 1
+		var owned: int = _purchased.get(pid, 0)
+		if owned < req_rank:
 			return false
 	if node.ascension_prerequisite_id != &"":
-		if not _purchased.get(node.ascension_prerequisite_id, false):
+		if not _state.has_ascension(node.ascension_prerequisite_id):
 			return false
 	return true
 
@@ -240,18 +250,37 @@ func _is_revealed(node: TalentNode) -> bool:
 func _refresh(node: TalentNode, animated := true, just_revealed := false) -> void:
 	# 已购买状态以 GameState（_purchased）为准：节点场景是重建的，
 	# 自身 state 不跨档保留，不恢复的话重进界面已购天赋会显示成可再买
-	if _purchased.get(node.talent_id, false):
+	var current_rank: int = _purchased.get(node.talent_id, 0)
+	node.set_rank(current_rank)
+	_update_node_rank_and_cost(node)
+	if current_rank > 0:
+		# 已购买：统一显示为 PURCHASED（满级大小/透明度），rank 标签区分等级
 		if node.state != TalentNode.State.PURCHASED:
 			node.set_state(TalentNode.State.PURCHASED, animated, just_revealed)
 		return
 	node.set_state(TalentNode.State.AVAILABLE if _can_afford(node) else TalentNode.State.LOCKED, animated, just_revealed)
 
 
-## 可负担判断：按货币（金币 / 升华点）读真实 GameState 余额
+## 可购买判断：先校验解锁条件，再按货币（金币 / 升华点）读真实 GameState 余额
 func _can_afford(node: TalentNode) -> bool:
+	if not _meets_unlock_condition(node):
+		return false
 	if node.currency == "升华点":
 		return _state.ascension_points_available().gte(node.cost)
 	return _state.coins.gte(node.cost)
+
+
+## 解锁条件判断：解析 "dirt_mined ≥ 50" 格式，与 GameState.ore_mined 比较。
+## 空条件或不符合 {ore}_mined ≥ {n} 格式的条件视为显示文本，不做数值门控。
+func _meets_unlock_condition(node: TalentNode) -> bool:
+	if node.unlock_condition == "":
+		return true
+	var m := _unlock_condition_re.search(node.unlock_condition.strip_edges())
+	if m == null:
+		return true
+	var ore_id := StringName(m.get_string(1))
+	var threshold := int(m.get_string(2))
+	return _state.get_ore_mined(ore_id) >= threshold
 
 
 ## 当前树对应货币的余额（金币 / 可花升华点）
@@ -274,8 +303,12 @@ func _click(node: TalentNode) -> void:
 		_sm().play_sfx(&"choose_to_reset")
 		_prompt_ascension()
 		return
-	if node.state == TalentNode.State.PURCHASED:
+	var current_rank: int = _purchased.get(node.talent_id, 0)
+	if current_rank >= node.max_rank:
+		print("已满级：%s" % node.display_name)
+		_sm().play_sfx(&"cant_buy")
 		return
+	_update_node_rank_and_cost(node)
 	if not _can_afford(node):
 		print("余额不足：%s 需要 %s %s" % [node.display_name, node.cost.to_compact_string(), node.currency])
 		_sm().play_sfx(&"cant_buy")
@@ -286,23 +319,24 @@ func _click(node: TalentNode) -> void:
 			print("升华点不足：%s" % node.display_name)
 			_sm().play_sfx(&"cant_buy")
 			return
+		_purchased[node.talent_id] = 1
 	else:
 		# 金币购买：先扣款，再记录
 		if not _state.spend_coins(node.cost):
 			print("金币不足：%s" % node.display_name)
 			_sm().play_sfx(&"cant_buy")
 			return
-		_state.record_talent_purchase(node.talent_id)
+		var new_rank := _state.record_talent_purchase(node.talent_id)
+		_purchased[node.talent_id] = new_rank
 	# 购买成功音效：升华点/金币两种音色
 	_sm().play_sfx(&"sublimation_talent_click" if node.currency == "升华点" else &"talent_click")
-	node.set_state(TalentNode.State.PURCHASED)
-	_purchased[node.talent_id] = true
+	node.set_state(TalentNode.State.PURCHASED if current_rank + 1 >= node.max_rank else TalentNode.State.AVAILABLE)
 	_talent_system.invalidate()
 	_play_purchase_unlock(node)   # 购买特效：节点位置随机播放 unlock 闪光爆发
-	print("解锁天赋：%s，剩余 %s %s" % [node.display_name, _current_balance().to_compact_string(), node.currency])
+	print("升级天赋：%s → Lv.%d，剩余 %s %s" % [node.display_name, current_rank + 1, _current_balance().to_compact_string(), node.currency])
 	# 卡在爆发高点（下蹲+过冲≈0.24s）揭示新解锁节点（0→base+0.3→base 弹跳出现）
 	await get_tree().create_timer(TalentNode.REVEAL_DELAY).timeout
-	_refresh_all()   # 解锁后可能揭示下一级天赋
+	_refresh_all()   # 升级后可能揭示新节点或改变可买状态
 	_persist()
 	_update_gold_label()
 
@@ -336,9 +370,22 @@ func _play_purchase_unlock(node: TalentNode) -> void:
 func _sync_purchased() -> void:
 	_purchased.clear()
 	for id in _state.talent_purchases:
-		_purchased[id] = true
+		_purchased[id] = _state.talent_purchases[id]
 	for id in _state.ascension_purchases:
-		_purchased[id] = true
+		_purchased[id] = 1 if _state.ascension_purchases[id] else 0
+
+
+## 同步节点的当前等级与显示成本（已购等级越高，下一级越贵）
+func _update_node_rank_and_cost(node: TalentNode) -> void:
+	node.current_rank = _purchased.get(node.talent_id, 0)
+	var next_rank := node.current_rank + 1
+	if next_rank > node.max_rank:
+		next_rank = node.max_rank
+	var mult := pow(float(node.cost_mult), maxi(next_rank - 1, 0))
+	if node.base_cost != null:
+		node.cost = node.base_cost.mul(BigNumber.from_float(mult))
+	else:
+		node.cost = BigNumber.zero()
 
 
 ## 弹出升华确认对话框：根据当前可结算升华点显示不同提示，确认后再执行升华。
@@ -361,18 +408,45 @@ func _prompt_ascension() -> void:
 		_do_ascension()
 
 
-## 点击"重置·升华"：领取差值 → 播放升华特效 → 写档 → 转场进入升华天赋场景。
+## 点击"重置·升华"：领取差值 → 在重置节点播放 charge 特效 + 摄像头拉近 →
+## 白场淡入 → 切换场景 → 进入升华天赋树。
 func _do_ascension() -> void:
 	var from_earned := _state.ascension_points_earned
 	var gain := _state.apply_ascension()
 	_talent_system.invalidate()
 	print("升华：领取 %s 升华点，进入新一轮" % gain.to_compact_string())
-
-	var from_lifetime := Prestige.threshold_for_points(from_earned)
-	var to_lifetime := _state.lifetime_coins
-	await _play_reset_vfx(from_lifetime, to_lifetime)
 	_persist()
-	SceneTransition.play_to("res://scenes/talent_ascension.tscn")
+
+	var reset_node := _nodes_by_id.get(&"talent_reset") as TalentNode
+	var focus_pos := Vector2.ZERO if reset_node == null else reset_node.global_position
+
+	# 在重置节点上播放 charge 特效
+	if CHARGE_VFX_SCENE != null:
+		var charge := CHARGE_VFX_SCENE.instantiate() as Node2D
+		add_child(charge)
+		charge.global_position = focus_pos
+		charge.z_index = 3000
+		var anim := charge.get_node_or_null("AnimatedSprite2D") as AnimatedSprite2D
+		if anim != null:
+			anim.frame = 0
+			anim.frame_progress = 0.0
+			anim.play()
+
+	# 摄像头在 1.5s 内平滑拉近、移动到重置节点，直到白场转场
+	if camera != null:
+		# 先冻结摄像头的自动平滑，避免与 Tween 冲突
+		camera.target_position = camera.position
+		camera.target_zoom = camera.zoom
+		var zoom_tween := create_tween().set_parallel(true)
+		zoom_tween.tween_property(camera, "zoom",
+			Vector2(camera.max_zoom, camera.max_zoom), 1.5) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
+		zoom_tween.tween_property(camera, "position", focus_pos, 1.5) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
+
+	# charge 播放 1.5s 后白场转场
+	await get_tree().create_timer(1.5).timeout
+	WhiteFade.play(0.5, 0.0, 0.5, "res://scenes/talent_ascension.tscn")
 
 
 ## 播放升华（重置）特效：把 scenes/vfx/reset.tscn 实例加到根节点顶层，
@@ -479,8 +553,13 @@ func _tooltip_text(node: TalentNode) -> String:
 		text += "\n\n成本：[b]%s[/b] %s" % [node.cost.to_compact_string(), node.currency]
 	if not node.prerequisite_ids.is_empty():
 		var names: Array[String] = []
-		for pid in node.prerequisite_ids:
-			names.append(_def_names.get(pid, str(pid)))
+		for i in node.prerequisite_ids.size():
+			var pid := node.prerequisite_ids[i]
+			var req_rank := node.prerequisite_ranks[i] if i < node.prerequisite_ranks.size() else 1
+			var name: String = _def_names.get(pid, str(pid))
+			if req_rank > 1:
+				name += " Lv.%d" % req_rank
+			names.append(name)
 		text += "\n前置：" + "、".join(names)
 	if node.ascension_prerequisite_id != &"":
 		text += "\n升华前置：" + _def_names.get(node.ascension_prerequisite_id, str(node.ascension_prerequisite_id))

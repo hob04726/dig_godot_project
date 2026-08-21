@@ -3,6 +3,7 @@ extends Button
 ## 仅在升华树中显示（普通天赋树隐藏）。
 
 const CONFIRM_SCENE := "res://scenes/ui/confirm.tscn"
+const WhiteFade := preload("res://scripts/ui/white_fade.gd")
 
 func _ready() -> void:
 	pressed.connect(_on_pressed)
@@ -39,11 +40,11 @@ func _on_pressed() -> void:
 	if not confirmed:
 		return
 
-	# 确认后：写档并返回主场景
+	# 确认后：写档并白场转场回主场景
 	var grid := _talent_grid()
 	if grid != null and grid.has_method("persist"):
 		grid.call("persist")
-	SceneTransition.play_to("res://scenes/main.tscn")
+	WhiteFade.play(0.5, 0.0, 0.5, "res://scenes/main.tscn")
 
 
 func _talent_grid() -> Node:

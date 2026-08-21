@@ -45,19 +45,24 @@ func _move_mouse_screen(pos: Vector2) -> void:
 
 func _run() -> void:
 	var scene := (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	var gm := scene.get_node("World") as GameManager
+	# 使用独立存档，避免本机已有存档影响伤害数值
+	gm._save_manager.save_path = "user://test_hover_remine.json"
+	var sm := SaveManager.new()
+	sm.save_path = gm._save_manager.save_path
+	sm.clear_save()
 	root.add_child(scene)
 	for i in 5:
 		await process_frame
 	# 等待 SceneTransition 开场揭开结束（其 ColorRect 会挡住 gui_get_hovered_control）
 	await create_timer(0.7).timeout
 
-	var gm := scene.get_node("World") as GameManager
 	# 关闭 _process，避免自动调用 _batch_mine_if_held 干扰手动测试步骤
 	gm.set_process(false)
 
 	var dirt := gm.db.get_tile(&"dirt")
 	var cell_with_ore := Vector2i(50, 50)
-	var empty_cell := Vector2i(51, 50)
+	var empty_cell := Vector2i(53, 50)
 
 	gm.grid.set_cell(cell_with_ore, CellData.new(null, dirt))
 	gm.create_sprite(false, cell_with_ore, dirt)
@@ -71,7 +76,10 @@ func _run() -> void:
 	if ore == null:
 		_finish()
 		return
+	# 强制结束下落动画，避免 tween 继续把 sprite 复位到 (0,-50)
+	ore.change_state(ore.idle_state)
 	ore.has_landed = true
+	ore.sprite.position = Vector2.ZERO
 	await process_frame
 
 	# 鼠标移到屏幕右下角空白处，确保不在任何 UI 控件上
@@ -82,31 +90,30 @@ func _run() -> void:
 	_press_left()
 	await process_frame
 
-	# 先悬停到空格，把拖动挖矿记录清空
-	gm.update_hover(empty_cell)
-	gm._batch_mine_if_held()
+	# 清空圈内记录，准备测“新进入”
+	gm._mining_circle_ores.clear()
 
-	# 滑入矿：应触发一次挖掘
+	# 把范围圈移入矿：应触发一次挖掘
 	var hp_before := ore.hp
-	gm.update_hover(cell_with_ore)
+	gm._mining_circle.global_position = gm.grid_to_world(cell_with_ore)
 	gm._batch_mine_if_held()
 	var hp_after_first := ore.hp
-	_check(hp_after_first == hp_before - 1, "滑入矿时触发挖掘（hp %d -> %d）" % [hp_before, hp_after_first])
+	_check(hp_after_first == hp_before - 1, "圈碰到矿时触发挖掘（hp %d -> %d）" % [hp_before, hp_after_first])
 
-	# 悬停不动：不应重复挖掘
+	# 圈停在同一矿上：不应重复挖掘
 	gm._batch_mine_if_held()
 	gm._batch_mine_if_held()
-	_check(ore.hp == hp_after_first, "停在同一矿上不重复挖掘")
+	_check(ore.hp == hp_after_first, "圈停同一矿上不重复挖掘")
 
-	# 滑出到空格：记录清空，矿未受伤
-	gm.update_hover(empty_cell)
+	# 把范围圈移出到远处的空格：应离开圈内记录
+	gm._mining_circle.global_position = gm.grid_to_world(empty_cell)
 	gm._batch_mine_if_held()
-	_check(ore.hp == hp_after_first, "滑出到空格不挖掘")
+	_check(ore.hp == hp_after_first, "圈移出到空格不挖掘")
 
-	# 再次滑回同一矿：应再次触发挖掘
-	gm.update_hover(cell_with_ore)
+	# 再次把范围圈移回同一矿：应再次触发挖掘
+	gm._mining_circle.global_position = gm.grid_to_world(cell_with_ore)
 	gm._batch_mine_if_held()
-	_check(ore.hp == hp_after_first - 1, "离开后再划回同一矿可再次挖掘（hp %d -> %d）" % [hp_after_first, ore.hp])
+	_check(ore.hp == hp_after_first - 1, "圈离开后再碰同一矿可再次挖掘（hp %d -> %d）" % [hp_after_first, ore.hp])
 
 	_release_left()
 	_finish()

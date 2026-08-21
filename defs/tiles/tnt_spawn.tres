@@ -9,6 +9,6 @@ id = &"tnt_spawn"
 display_name = "TNT 生成器"
 texture = ExtResource("2_tex")
 behavior = 15
-tick_interval = 3.0
+tick_interval = 45.0
 spawn_ore_id = &"tnt"
 base_cost = 20000

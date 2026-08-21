@@ -91,6 +91,7 @@ func _make_def(row: PackedStringArray, index: Dictionary, default_currency: Stri
 	def.col = _cell(row, index, "col", "0").to_int()
 	def.row = _cell(row, index, "row", "0").to_int()
 	def.prerequisite_ids = _split_ids(_cell(row, index, "prerequisite_ids"))
+	def.prerequisite_ranks = _split_ints(_cell(row, index, "prerequisite_ranks"))
 	def.ascension_prerequisite_id = StringName(_cell(row, index, "ascension_prerequisite_id"))
 	def.unlock_condition = _cell(row, index, "unlock_condition")
 	def.effect_type = _cell(row, index, "effect_type")
@@ -98,6 +99,9 @@ func _make_def(row: PackedStringArray, index: Dictionary, default_currency: Stri
 	def.operation = _cell(row, index, "operation")
 	def.value = _cell(row, index, "value")
 	def.max_rank = _cell(row, index, "max_rank", "1").to_int()
+	def.cost_mult = _cell(row, index, "cost_mult", "5").to_int()
+	if def.cost_mult < 1:
+		def.cost_mult = 1
 	def.group = _cell(row, index, "group")
 	def.branch = _cell(row, index, "branch")
 	def.level = _cell(row, index, "level")
@@ -116,6 +120,17 @@ func _split_ids(text: String) -> Array[StringName]:
 		var trimmed := part.strip_edges()
 		if trimmed != "":
 			out.append(StringName(trimmed))
+	return out
+
+
+func _split_ints(text: String) -> Array[int]:
+	var out: Array[int] = []
+	for part in text.split(","):
+		var trimmed := part.strip_edges()
+		if trimmed != "" and trimmed.is_valid_int():
+			out.append(trimmed.to_int())
+		else:
+			out.append(0)
 	return out
 
 

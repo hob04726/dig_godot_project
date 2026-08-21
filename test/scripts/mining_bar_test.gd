@@ -1,6 +1,7 @@
 extends SceneTree
 
-## 挖矿进度条动效回归测试：验证切换目标/快速挖掘时进度条不会异常消失或卡住。
+## 挖矿进度条动效回归测试：验证每个受伤的矿石都有独立进度条，
+## 切换目标、隐藏/重新显示时行为正确。
 ## 运行：godot --headless --path . --script res://test/scripts/mining_bar_test.gd
 
 var _failures := 0
@@ -41,22 +42,22 @@ func _run() -> void:
 		_finish()
 		return
 
-	var bar: Node2D = gm._mining_bar
-	_check(bar != null, "GameManager 已创建进度条")
-	if bar == null:
+	# --- 基本显示：更新进度条后应可见并放大到接近 1 ---
+	gm._update_mining_bar(ore1)
+	var bar1: Node2D = gm._mining_bars.get(cell1) as Node2D
+	_check(bar1 != null, "矿石 1 已创建进度条")
+	if bar1 == null:
 		_finish()
 		return
 
-	# --- 基本显示：更新进度条后应可见并放大到接近 1 ---
-	gm._update_mining_bar(ore1)
 	await process_frame
-	_check(bar.visible, "更新进度条后可见")
-	_check(bar.scale.x > 0.2, "更新后进度条已开始放大（scale=%.2f）" % bar.scale.x)
+	_check(bar1.visible, "更新进度条后可见")
+	_check(bar1.scale.x > 0.2, "更新后进度条已开始放大（scale=%.2f）" % bar1.scale.x)
 	# 等弹入动画完成
 	await create_timer(0.25).timeout
-	_check(bar.visible and is_equal_approx(bar.scale.x, 1.0), "弹入完成后 scale=1")
+	_check(bar1.visible and is_equal_approx(bar1.scale.x, 1.0), "弹入完成后 scale=1")
 
-	# --- 切换目标：正在收起时切到新矿，不应消失 ---
+	# --- 切换目标：给第二个矿也创建进度条，两者互不干扰 ---
 	var ore2: OreBlock = null
 	var cell2 := Vector2i.ZERO
 	for cell: Vector2i in gm.grid.cells.keys():
@@ -69,7 +70,7 @@ func _run() -> void:
 			break
 
 	if ore2 == null:
-		# 没有第二个矿，在 (0,1) 手动生成一个
+		# 没有第二个矿，在 (0, 1) 手动生成一个
 		cell2 = Vector2i(0, 1)
 		if gm.grid.has_cell(cell2) and not gm.grid.ores.has(cell2):
 			var def := load("res://defs/ores/gold.tres") as OreDef
@@ -77,29 +78,41 @@ func _run() -> void:
 			await process_frame
 			ore2 = gm.grid.get_ore(cell2)
 			if ore2 != null:
+				ore2.change_state(ore2.idle_state)
 				ore2.has_landed = true
+				ore2.sprite.position = Vector2.ZERO
 
 	if ore2 != null:
-		gm._hide_mining_bar(ore1)   # 触发收起
-		await process_frame
-		gm._update_mining_bar(ore2) # 立刻切新矿（模拟快速挖掘/特效多时的切换）
-		await process_frame
-		_check(bar.visible, "收起过程中切新矿，进度条仍可见")
-		# 等动画稳定
+		gm._update_mining_bar(ore2)
+		var bar2: Node2D = gm._mining_bars.get(cell2) as Node2D
+		_check(bar2 != null and bar2 != bar1, "矿石 2 有独立进度条")
 		await create_timer(0.25).timeout
-		_check(bar.visible and is_equal_approx(bar.scale.x, 1.0), "切新矿后弹入完成 scale=1")
+		_check(bar1.visible and is_equal_approx(bar1.scale.x, 1.0), "切到新矿后矿石 1 进度条仍可见")
+		_check(bar2.visible and is_equal_approx(bar2.scale.x, 1.0), "矿石 2 进度条弹入完成 scale=1")
 	else:
 		push_warning("mining_bar_test: 无法找到或生成第二个矿，跳过切换目标测试")
 
-	# --- 点空处/矿死亡：隐藏后重新显示新矿 ---
-	gm._hide_mining_bar()
+	# --- 隐藏指定矿的进度条，不影响另一个 ---
+	gm._hide_mining_bar(cell1)
 	await create_timer(0.25).timeout
-	_check(not bar.visible, "隐藏后进度条不可见")
+	# 隐藏动画完成后旧 bar 已被释放，要重新从字典取
+	bar1 = gm._mining_bars.get(cell1) as Node2D
+	_check(bar1 == null or not bar1.visible, "隐藏后矿石 1 进度条不可见")
 	gm._update_mining_bar(ore1)
 	await process_frame
-	_check(bar.visible, "重新显示进度条后可见")
+	bar1 = gm._mining_bars.get(cell1) as Node2D
+	_check(bar1 != null and bar1.visible, "重新显示进度条后可见")
 	await create_timer(0.25).timeout
-	_check(bar.visible and is_equal_approx(bar.scale.x, 1.0), "重新弹入完成 scale=1")
+	bar1 = gm._mining_bars.get(cell1) as Node2D
+	_check(bar1 != null and bar1.visible and is_equal_approx(bar1.scale.x, 1.0), "重新弹入完成 scale=1")
+
+	# --- 超时隐藏：超过 MINING_BAR_HIDE_DELAY 没再受伤，进度条自动收起 ---
+	var delay := GameManager.MINING_BAR_HIDE_DELAY + 0.5
+	await create_timer(delay).timeout
+	# _process 每帧会检查并触发 pop_out，等动画完成
+	await create_timer(0.2).timeout
+	bar1 = gm._mining_bars.get(cell1) as Node2D
+	_check(bar1 == null or not bar1.visible, "超时未受伤后进度条自动隐藏")
 
 	sm.clear_save()
 	_finish()

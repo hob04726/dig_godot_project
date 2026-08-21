@@ -184,14 +184,14 @@ func _init() -> void:
 	grid.tick(conveyor_ru.tick_interval)
 	_check(grid.ores.has(conv_cell), "目标被堵住时传送带不推")
 
-	# --- tnt_spawn：自身及邻接空地块请求生成 TNT，有矿时只发剩余空邻接格 ---
+	# --- tnt_spawn：只在自身所在格请求生成 TNT，自身有矿时不再请求 ---
 	grid = _base_grid(dirt)
 	var tnt_spawn_cell := Vector2i(0, 1)
 	_set_tile(grid, tnt_spawn_cell, tnt_spawn)
 	var tnt_requests: Array = []
 	grid.tile_request_spawn.connect(func(c: Vector2i, id: StringName) -> void: tnt_requests.append([c, id]))
 	grid.tick(tnt_spawn.tick_interval)
-	_check(tnt_requests.size() == 2, "tnt_spawn 空时请求自身及邻接格（共 2 个）")
+	_check(tnt_requests.size() == 1 and tnt_requests[0][0] == tnt_spawn_cell, "tnt_spawn 空时只请求自身所在格")
 	for r in tnt_requests:
 		_check(r[1] == &"tnt", "tnt_spawn 请求矿石为 tnt")
 	var tnt_ore_inst := OreBlock.new()
@@ -200,7 +200,7 @@ func _init() -> void:
 	grid.try_spawn_ore(tnt_spawn_cell, tnt_ore_inst)
 	tnt_requests.clear()
 	grid.tick(tnt_spawn.tick_interval)
-	_check(tnt_requests.size() == 1 and tnt_requests[0][0] == Vector2i(0, 0), "tnt_spawn 有矿时只请求剩余空邻接格")
+	_check(tnt_requests.is_empty(), "tnt_spawn 自身有矿时不再请求")
 
 	# --- tnt 地皮：不会主动生成 TNT；只承载 TNT 矿 ---
 	grid = _base_grid(dirt)

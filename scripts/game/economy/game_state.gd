@@ -27,12 +27,14 @@ var ascension_points_spent: int = 0
 var run_version: int = 0
 ## 每矿累计开采数：ore_id -> int（矿石被玩家挖死时 +1，跨轮保留）
 var ore_mined: Dictionary[StringName, int] = {}
-## 普通天赋购买（本轮）：id -> true
-var talent_purchases: Dictionary[StringName, bool] = {}
+## 普通天赋购买（本轮）：id -> 当前等级（0=未购买，1~5=已购等级）
+var talent_purchases: Dictionary[StringName, int] = {}
 ## 升华天赋购买（永久）：id -> true
 var ascension_purchases: Dictionary[StringName, bool] = {}
 ## 世界名（显示在 NamePanel 与重置摄像头按钮悬浮提示）
 var world_name: String = "小世界"
+## 全局价值翻倍 buff 剩余时间（秒）：挖掉 VALUE_BUFF 特殊矿时触发 60 秒
+var value_buff_time_left: float = 0.0
 
 
 # ==================== 世界名 ====================
@@ -109,17 +111,25 @@ func permanent_multiplier() -> BigNumber:
 # ==================== 天赋购买 ====================
 
 func has_talent(id: StringName) -> bool:
-	return talent_purchases.get(id, false)
+	return get_talent_rank(id) > 0
+
+
+## 返回普通天赋当前等级（0=未购买）
+func get_talent_rank(id: StringName) -> int:
+	return talent_purchases.get(id, 0)
 
 
 func has_ascension(id: StringName) -> bool:
 	return ascension_purchases.get(id, false)
 
 
-## 记录普通天赋购买（金币扣款由调用方先走 spend_coins）
-func record_talent_purchase(id: StringName) -> void:
-	talent_purchases[id] = true
+## 记录普通天赋购买/升级（金币扣款由调用方先走 spend_coins）
+## 返回升级后的等级
+func record_talent_purchase(id: StringName) -> int:
+	var rank := get_talent_rank(id) + 1
+	talent_purchases[id] = rank
 	changed.emit()
+	return rank
 
 
 ## 购买升华天赋：检查升华点余额，扣点并记录。返回是否成功。
@@ -143,7 +153,7 @@ func to_dict() -> Dictionary:
 		om[String(k)] = ore_mined[k]
 	var tp := {}
 	for k: StringName in talent_purchases:
-		tp[String(k)] = true
+		tp[String(k)] = talent_purchases[k]
 	var ap := {}
 	for k: StringName in ascension_purchases:
 		ap[String(k)] = true
@@ -157,6 +167,7 @@ func to_dict() -> Dictionary:
 		"talents": tp,
 		"ascension_talents": ap,
 		"world_name": world_name,
+		"value_buff_time_left": value_buff_time_left,
 	}
 
 
@@ -172,9 +183,19 @@ func load_from_dict(data: Dictionary) -> void:
 		ore_mined[StringName(key)] = int(data["ore_mined"][key])
 	talent_purchases.clear()
 	for key in data.get("talents", {}):
-		talent_purchases[StringName(key)] = true
+		var raw = data["talents"][key]
+		var rank := 1
+		if typeof(raw) == TYPE_BOOL:
+			rank = 1 if raw else 0
+		elif typeof(raw) == TYPE_INT:
+			rank = int(raw)
+		elif typeof(raw) == TYPE_FLOAT:
+			rank = int(raw)
+		if rank > 0:
+			talent_purchases[StringName(key)] = rank
 	ascension_purchases.clear()
 	for key in data.get("ascension_talents", {}):
 		ascension_purchases[StringName(key)] = true
 	world_name = str(data.get("world_name", "小世界"))
+	value_buff_time_left = float(data.get("value_buff_time_left", 0.0))
 	changed.emit()

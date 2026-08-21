@@ -15,6 +15,7 @@ uniform float aspect_ratio : hint_range(0.1, 10.0, 0.01) = 1.0;
 uniform bool square_border = false;
 uniform vec2 offset;
 uniform bool max_or_add = false;
+uniform bool only_outline = false;
 
 void vertex(){
 	if (border_clipping_fix){
@@ -54,21 +55,30 @@ void fragment(){
 
 	vec4 sprite_color = tex(TEXTURE, uv);
 
-	float alpha = sprite_color.a;
+	float ring_alpha = 0.0;
 	if (square_border){
 		for(int i=0;i<ring_count;++i){
 			float r = float(i) / float(ring_count) + ring_offset;
-			alpha = max(alpha,texture(TEXTURE, uv + o + size * square(r) * vec2(aspect_ratio,1.0)).a * outline_color.a);}// texture sampling fix is disabled because both with and without give the same result
+			ring_alpha = max(ring_alpha, texture(TEXTURE, uv + o + size * square(r) * vec2(aspect_ratio,1.0)).a * outline_color.a);}// texture sampling fix is disabled because both with and without give the same result
 	}else{
 		for(int i=0;i<ring_count;++i){
 			float r = float(i) * 3.14159 / float(ring_count) * 2.0 + ring_offset;
 			if (max_or_add){
-				alpha = alpha+tex(TEXTURE, uv + o +  vec2(size.x * sin(r) * aspect_ratio, size.y * cos(r))).a * outline_color.a;
+				ring_alpha = ring_alpha + tex(TEXTURE, uv + o +  vec2(size.x * sin(r) * aspect_ratio, size.y * cos(r))).a * outline_color.a;
 			}else{
-				alpha = max(alpha,tex(TEXTURE, uv + o +  vec2(size.x * sin(r) * aspect_ratio, size.y * cos(r))).a * outline_color.a);
+				ring_alpha = max(ring_alpha, tex(TEXTURE, uv + o +  vec2(size.x * sin(r) * aspect_ratio, size.y * cos(r))).a * outline_color.a);
 			}
 		}
 	}
-    vec3 final_color = mix(outline_color.rgb, sprite_color.rgb, sprite_color.a);
-    COLOR = vec4(final_color, clamp(alpha, 0.0, 1.0));
+	ring_alpha = clamp(ring_alpha, 0.0, 1.0);
+	float alpha = max(sprite_color.a, ring_alpha);
+
+	if (only_outline) {
+		// 只画描边环，中心透明，避免盖住下方带 shader 的图标
+		alpha = max(0.0, ring_alpha - sprite_color.a);
+		COLOR = vec4(outline_color.rgb, alpha);
+	} else {
+		vec3 final_color = mix(outline_color.rgb, sprite_color.rgb, sprite_color.a);
+		COLOR = vec4(final_color, clamp(alpha, 0.0, 1.0));
+	}
 }

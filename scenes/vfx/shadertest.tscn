@@ -1,0 +1,163 @@
+[gd_scene format=3 uid="uid://3hoheit0c1pg"]
+
+[ext_resource type="Script" uid="uid://kb3fayhjpa7h" path="res://scripts/ui/shader_test_scene.gd" id="1_driver"]
+[ext_resource type="Shader" uid="uid://c5ngtc80a52b5" path="res://scripts/shaders/card.gdshader" id="1_k1r7y"]
+[ext_resource type="Texture2D" uid="uid://b4cslkfoar7jo" path="res://assets/Cards/Normals/groovy normal.png" id="2_eqxcj"]
+[ext_resource type="Texture2D" uid="uid://cjs7p8sscx45f" path="res://icon.svg" id="2_l1mm1"]
+[ext_resource type="Texture2D" uid="uid://byq0i61pyrni1" path="res://assets/Cards/Rainbow-gradient-fully-saturated.svg.png" id="2_yq1em"]
+[ext_resource type="Texture2D" uid="uid://csusai8ffabgk" path="res://assets/Cards/Normals/7813-normal.jpg" id="3_buqq3"]
+[ext_resource type="Script" uid="uid://c2rdstf3c572s" path="res://scripts/vfx/holo.gd" id="3_l1mm1"]
+[ext_resource type="Texture2D" uid="uid://cmnpst288flmm" path="res://assets/Cards/Normals/12551-normal.jpg" id="3_yq1em"]
+[ext_resource type="Texture2D" uid="uid://dmddj43kn7pkc" path="res://assets/Cards/Normals/normal_circles.jpg" id="6_wumm8"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_cv8ss"]
+shader = ExtResource("1_k1r7y")
+shader_parameter/mouse_position = Vector2(0, 0)
+shader_parameter/sprite_position = Vector2(0, 0)
+shader_parameter/fov = 90.0
+shader_parameter/cull_back = true
+shader_parameter/inset = 0.0
+shader_parameter/max_tilt = 1.0
+shader_parameter/max_distance = 500.0
+shader_parameter/foilcolor = Color(0, 0, 0, 1)
+shader_parameter/threshold = 0.1
+shader_parameter/fuzziness = 0.1
+shader_parameter/period = 1.0
+shader_parameter/scroll = 1.0
+shader_parameter/normal_strength = 0.1
+shader_parameter/effect_alpha_mult = 1.0
+shader_parameter/direction = 0.5
+
+[sub_resource type="Gradient" id="Gradient_yq1em"]
+offsets = PackedFloat32Array(0, 0.5081761, 1)
+colors = PackedColorArray(0, 1, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_wumm8"]
+gradient = SubResource("Gradient_yq1em")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_yq1em"]
+shader = ExtResource("1_k1r7y")
+shader_parameter/mouse_position = Vector2(0, 0)
+shader_parameter/sprite_position = Vector2(0, 0)
+shader_parameter/fov = 90.0
+shader_parameter/cull_back = true
+shader_parameter/inset = 0.0
+shader_parameter/max_tilt = 1.0
+shader_parameter/max_distance = 500.0
+shader_parameter/foilcolor = Color(0, 0, 0, 1)
+shader_parameter/threshold = 2.0
+shader_parameter/fuzziness = 0.1
+shader_parameter/period = 1.0
+shader_parameter/scroll = 1.0
+shader_parameter/normal_strength = 3.0
+shader_parameter/effect_alpha_mult = 0.10000000475
+shader_parameter/direction = 0.5
+shader_parameter/gradient = SubResource("GradientTexture1D_wumm8")
+shader_parameter/normal_map = ExtResource("6_wumm8")
+
+[sub_resource type="Gradient" id="Gradient_wumm8"]
+offsets = PackedFloat32Array(0, 0.43773586, 0.9811321)
+colors = PackedColorArray(0, 1, 0, 1, 0, 0.3764706, 0, 1, 0, 1, 0, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_yq1em"]
+gradient = SubResource("Gradient_wumm8")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_buqq3"]
+shader = ExtResource("1_k1r7y")
+shader_parameter/mouse_position = Vector2(0, 0)
+shader_parameter/sprite_position = Vector2(0, 0)
+shader_parameter/fov = 90.0
+shader_parameter/cull_back = true
+shader_parameter/inset = 0.0
+shader_parameter/max_tilt = 1.0
+shader_parameter/max_distance = 500.0
+shader_parameter/foilcolor = Color(0, 0, 0, 1)
+shader_parameter/threshold = 2.0
+shader_parameter/fuzziness = 0.1
+shader_parameter/period = 1.0
+shader_parameter/scroll = 1.0
+shader_parameter/normal_strength = 3.0
+shader_parameter/effect_alpha_mult = 0.10000000475
+shader_parameter/direction = 0.5
+shader_parameter/gradient = SubResource("GradientTexture1D_yq1em")
+shader_parameter/normal_map = ExtResource("3_buqq3")
+
+[sub_resource type="Gradient" id="Gradient_14efl"]
+offsets = PackedFloat32Array(0, 0.56855345, 1)
+colors = PackedColorArray(0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_buqq3"]
+gradient = SubResource("Gradient_14efl")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_oxpwf"]
+shader = ExtResource("1_k1r7y")
+shader_parameter/mouse_position = Vector2(0, 0)
+shader_parameter/sprite_position = Vector2(0, 0)
+shader_parameter/fov = 90.0
+shader_parameter/cull_back = true
+shader_parameter/inset = 0.0
+shader_parameter/max_tilt = 1.0
+shader_parameter/max_distance = 500.0
+shader_parameter/foilcolor = Color(0, 0, 0, 1)
+shader_parameter/threshold = 2.0
+shader_parameter/fuzziness = 0.1
+shader_parameter/period = 1.0
+shader_parameter/scroll = 1.0
+shader_parameter/normal_strength = 3.0
+shader_parameter/effect_alpha_mult = 0.10000000475
+shader_parameter/direction = 0.5
+shader_parameter/gradient = SubResource("GradientTexture1D_buqq3")
+shader_parameter/normal_map = ExtResource("2_eqxcj")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_eqxcj"]
+shader = ExtResource("1_k1r7y")
+shader_parameter/mouse_position = Vector2(0, 0)
+shader_parameter/sprite_position = Vector2(0, 0)
+shader_parameter/fov = 90.0
+shader_parameter/cull_back = true
+shader_parameter/inset = 0.0
+shader_parameter/max_tilt = 1.0
+shader_parameter/max_distance = 500.0
+shader_parameter/foilcolor = Color(0, 0, 0, 1)
+shader_parameter/threshold = 2.0
+shader_parameter/fuzziness = 0.1
+shader_parameter/period = 1.0
+shader_parameter/scroll = 1.0
+shader_parameter/normal_strength = 3.0
+shader_parameter/effect_alpha_mult = 0.10000000475
+shader_parameter/direction = 0.5
+shader_parameter/gradient = ExtResource("2_yq1em")
+shader_parameter/normal_map = ExtResource("3_yq1em")
+
+[node name="Shadertest" type="Node2D" unique_id=1337259268]
+script = ExtResource("1_driver")
+
+[node name="level1" type="Sprite2D" parent="." unique_id=323558665]
+material = SubResource("ShaderMaterial_cv8ss")
+position = Vector2(210, 104)
+texture = ExtResource("2_l1mm1")
+script = ExtResource("3_l1mm1")
+
+[node name="level2" type="Sprite2D" parent="." unique_id=1439824128]
+material = SubResource("ShaderMaterial_yq1em")
+position = Vector2(387, 104)
+texture = ExtResource("2_l1mm1")
+script = ExtResource("3_l1mm1")
+
+[node name="level3" type="Sprite2D" parent="." unique_id=1650736483]
+material = SubResource("ShaderMaterial_buqq3")
+position = Vector2(571, 104)
+texture = ExtResource("2_l1mm1")
+script = ExtResource("3_l1mm1")
+
+[node name="level4" type="Sprite2D" parent="." unique_id=1497194734]
+material = SubResource("ShaderMaterial_oxpwf")
+position = Vector2(738, 104)
+texture = ExtResource("2_l1mm1")
+script = ExtResource("3_l1mm1")
+
+[node name="level5" type="Sprite2D" parent="." unique_id=34896490]
+material = SubResource("ShaderMaterial_eqxcj")
+position = Vector2(903, 104)
+texture = ExtResource("2_l1mm1")
+script = ExtResource("3_l1mm1")
