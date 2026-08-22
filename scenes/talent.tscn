@@ -14,7 +14,7 @@
 [ext_resource type="Script" uid="uid://dvuxokkbrkdj0" path="res://scripts/button/open_settings.gd" id="12_settings"]
 [ext_resource type="Texture2D" uid="uid://djp2ui6a0bhup" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_Icons.png" id="13_icons"]
 [ext_resource type="Texture2D" uid="uid://dy5awy4d1opk4" path="res://assets/sketch-town/Tiles/grass_center_E.png" id="14_grass"]
-[ext_resource type="Script" path="res://scripts/button/talent_finish_ascension.gd" id="15_finish"]
+[ext_resource type="Script" uid="uid://b5hjjgx3rwfe6" path="res://scripts/button/talent_finish_ascension.gd" id="15_finish"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_uqx37"]
 shader = ExtResource("1_cj7wb")

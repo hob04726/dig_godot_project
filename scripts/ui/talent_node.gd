@@ -140,7 +140,7 @@ func setup(def: TalentDef) -> void:
 
 ## 悬停描边前置：outline.gdshader 的 border_clipping_fix 假定 UV∈[0,1]，
 ## AtlasTexture 的区域 UV 不满足（顶点外扩方向会错），所以把图标烘焙成独立
-## ImageTexture；同一源贴图（204 个节点共用同一张图集区域）只烘一次。
+## ImageTexture；同一源贴图只烘一次（缓存按源贴图去重）。
 func _bake_icon() -> void:
 	var tex := icon_sprite.texture
 	if tex == null or tex is ImageTexture:
@@ -363,6 +363,11 @@ func _base_alpha() -> float:
 
 func _desired_alpha() -> float:
 	return 1.0 if _hovered else _base_alpha()
+
+
+## 重复购买（升级）时重播购买弹跳：set_state 在 PURCHASED→PURCHASED 时不会重播
+func play_purchase_pop() -> void:
+	_play_purchase_pop()
 
 
 ## 购买后：下蹲蓄力 → 爆发过冲到 1.4（同时瞬间提亮）→ 弹性回稳（果冻感）

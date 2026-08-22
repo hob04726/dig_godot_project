@@ -130,6 +130,7 @@ const TOOLTIP_FOLLOW_SPEED := 15.0   # 说明框平滑跟随速度（1/秒），
 
 
 func _process(delta: float) -> void:
+	_update_rank_texts(delta)
 	if camera == null:
 		return
 	# 拖动相机时不做节点悬浮，说明框不追着鼠标跑
@@ -330,7 +331,14 @@ func _click(node: TalentNode) -> void:
 		_purchased[node.talent_id] = new_rank
 	# 购买成功音效：升华点/金币两种音色
 	_sm().play_sfx(&"sublimation_talent_click" if node.currency == "升华点" else &"talent_click")
-	node.set_state(TalentNode.State.PURCHASED if current_rank + 1 >= node.max_rank else TalentNode.State.AVAILABLE)
+	# 已购（rank ≥ 1）统一 PURCHASED：完全不透明 + 正常大小；
+	# 重复购买（已是 PURCHASED）时 set_state 不会重播弹跳，手动补一次升级弹跳
+	var is_upgrade := current_rank > 0
+	var was_purchased := node.state == TalentNode.State.PURCHASED
+	node.set_state(TalentNode.State.PURCHASED)
+	if was_purchased:
+		node.play_purchase_pop()
+	_spawn_rank_text(node, is_upgrade)   # 跳数：首次 unlock!（灰）/ 升级 upgrade!（黄）
 	_talent_system.invalidate()
 	_play_purchase_unlock(node)   # 购买特效：节点位置随机播放 unlock 闪光爆发
 	print("升级天赋：%s → Lv.%d，剩余 %s %s" % [node.display_name, current_rank + 1, _current_balance().to_compact_string(), node.currency])
@@ -339,6 +347,66 @@ func _click(node: TalentNode) -> void:
 	_refresh_all()   # 升级后可能揭示新节点或改变可买状态
 	_persist()
 	_update_gold_label()
+
+
+# ==================== 购买跳数（unlock! / upgrade!） ====================
+
+## 动效与金币跳数一致：匀速上飘、前 0.12s 从 0.1 放大到 1、0.6s 后渐隐消失。
+## 文字带 [wave] BBCode 波浪动效；首次解锁 = 灰色 unlock!，升级 = 黄色 upgrade!。
+## 注意：[wave] 不会驱动 RichTextLabel 自动重绘（实测冻结在静态波形上），
+## 必须由 _update_rank_texts 每帧 queue_redraw() 才会真正波动。
+const RANK_TEXT_SPEED := 140.0
+const RANK_TEXT_UNLOCK_COLOR := Color(0.8, 0.8, 0.85)
+const RANK_TEXT_UPGRADE_COLOR := Color(1.0, 0.85, 0.25)
+
+var _rank_texts: Array = []   # {node, label, time}
+
+
+func _spawn_rank_text(node: TalentNode, is_upgrade: bool) -> void:
+	var holder := Node2D.new()
+	holder.z_index = 200   # 画在节点与购买闪光（50）、网格边框（100）之上
+	holder.global_position = node.global_position + Vector2(0, -40)
+	var label := RichTextLabel.new()
+	label.bbcode_enabled = true
+	label.scroll_active = false
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE   # VFX 不吃鼠标输入
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.position = Vector2(-120, -40)
+	label.size = Vector2(240, 80)
+	var text := "upgrade!" if is_upgrade else "unlock!"
+	var color := RANK_TEXT_UPGRADE_COLOR if is_upgrade else RANK_TEXT_UNLOCK_COLOR
+	label.text = "[wave amp=26 freq=5]%s[/wave]" % text
+	label.add_theme_font_size_override("normal_font_size", 26)
+	label.add_theme_color_override("default_color", color)
+	label.add_theme_color_override("font_outline_color", Color(0.1, 0.08, 0.12, 1.0))
+	label.add_theme_constant_override("outline_size", 6)
+	holder.add_child(label)
+	add_child(holder)
+	holder.scale = Vector2(0.1, 0.1)
+	_rank_texts.append({"node": holder, "label": label, "time": 0.0})
+
+
+func _update_rank_texts(delta: float) -> void:
+	if _rank_texts.is_empty():
+		return
+	var remaining: Array = []
+	for e in _rank_texts:
+		var node: Node2D = e["node"]
+		var label: RichTextLabel = e["label"]
+		label.queue_redraw()   # [wave] 只在重绘时推进相位
+		e["time"] += delta
+		var time: float = e["time"]
+		node.position += Vector2.UP * RANK_TEXT_SPEED * delta
+		var grow := clampf(time / 0.12, 0.0, 1.0)
+		node.scale = Vector2.ONE * (0.1 + 0.9 * grow)
+		if time > 0.6:
+			node.modulate.a -= delta * 2.0
+		if node.modulate.a > 0.02:
+			remaining.append(e)
+		else:
+			node.queue_free()
+	_rank_texts = remaining
 
 
 ## 购买特效：在节点位置实例化 unlock（scenes/vfx/unlock.tscn），

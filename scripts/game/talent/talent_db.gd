@@ -10,6 +10,15 @@ extends RefCounted
 const NORMAL_PATH := "res://defs/talents/normal_talents.csv"
 const ASCENSION_PATH := "res://defs/talents/ascension_talents.csv"
 
+## 图标图集：32×32 一格，从左到右、从上到下依次对应 CSV 数据行。
+## 普通天赋对应第 3 行起（第 2 行 talent_reset 用球缸 shader，无图标）；
+## 升华天赋对应第 2 行起。
+const NORMAL_ICONS := preload("res://assets/talent_icon/png/talents.png")
+const ASCENSION_ICONS := preload("res://assets/talent_icon/png/ascension_talents.png")
+const ICON_CELL := 32
+## 普通图集跳过的开头定义数（talent_reset）
+const NORMAL_ICON_SKIP := 1
+
 var normal_defs: Array[TalentDef] = []
 var ascension_defs: Array[TalentDef] = []
 var _loaded := false
@@ -20,6 +29,8 @@ func load_all() -> void:
 		return
 	normal_defs = _load_csv(NORMAL_PATH, "金币")
 	ascension_defs = _load_csv(ASCENSION_PATH, "升华点")
+	_assign_icons(normal_defs, NORMAL_ICONS, NORMAL_ICON_SKIP)
+	_assign_icons(ascension_defs, ASCENSION_ICONS)
 	_loaded = true
 	print("TalentDb: 普通 %d 条，升华 %d 条" % [normal_defs.size(), ascension_defs.size()])
 
@@ -53,6 +64,21 @@ func get_name_map() -> Dictionary[StringName, String]:
 
 
 # ==================== CSV 解析 ====================
+
+## 按定义顺序从图集切 32×32 图标（从左到右、从上到下）写回 def.icon；
+## skip：跳过前 skip 条定义（如图集不含 talent_reset 的图标）；
+## 越界的格子（图集比定义多）自动忽略。
+func _assign_icons(defs: Array[TalentDef], sheet: Texture2D, skip := 0) -> void:
+	if sheet == null:
+		return
+	var cols := maxi(1, sheet.get_width() / ICON_CELL)
+	for i in range(skip, defs.size()):
+		var cell := i - skip
+		var icon := AtlasTexture.new()
+		icon.atlas = sheet
+		icon.region = Rect2((cell % cols) * ICON_CELL, (cell / cols) * ICON_CELL, ICON_CELL, ICON_CELL)
+		defs[i].icon = icon
+
 
 func _load_csv(path: String, default_currency: String) -> Array[TalentDef]:
 	var file := FileAccess.open(path, FileAccess.READ)
