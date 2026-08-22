@@ -3,7 +3,7 @@
 [ext_resource type="Script" uid="uid://kb3fayhjpa7h" path="res://scripts/ui/shader_test_scene.gd" id="1_driver"]
 [ext_resource type="Shader" uid="uid://c5ngtc80a52b5" path="res://scripts/shaders/card.gdshader" id="1_k1r7y"]
 [ext_resource type="Texture2D" uid="uid://b4cslkfoar7jo" path="res://assets/Cards/Normals/groovy normal.png" id="2_eqxcj"]
-[ext_resource type="Texture2D" uid="uid://cjs7p8sscx45f" path="res://icon.svg" id="2_l1mm1"]
+[ext_resource type="Texture2D" uid="uid://cisuppdj8qnxw" path="res://icon.png" id="2_l1mm1"]
 [ext_resource type="Texture2D" uid="uid://byq0i61pyrni1" path="res://assets/Cards/Rainbow-gradient-fully-saturated.svg.png" id="2_yq1em"]
 [ext_resource type="Texture2D" uid="uid://csusai8ffabgk" path="res://assets/Cards/Normals/7813-normal.jpg" id="3_buqq3"]
 [ext_resource type="Script" uid="uid://c2rdstf3c572s" path="res://scripts/vfx/holo.gd" id="3_l1mm1"]
