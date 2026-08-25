@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://bn4ihdk83pap7"
+path="res://.godot/imported/choose_to_reset.ogg-7150a34407875c7492321598775fbf13.oggvorbisstr"
+
+[deps]
+
+source_file="res://assets/sound/Sound Effect/choose_to_reset.ogg"
+dest_files=["res://.godot/imported/choose_to_reset.ogg-7150a34407875c7492321598775fbf13.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

@@ -1,0 +1,65 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://assets/blocks/png/ground_grass.png" id="1_cgrg5"]
+[ext_resource type="Script" path="res://scripts/game/block/ore_block.gd" id="1_om4np"]
+[ext_resource type="Texture2D" path="res://assets/blocks/png/ground_grass.png" id="2_4kun4"]
+[ext_resource type="Script" uid="uid://vrxxybrwpvbv" path="res://scripts/game/block/states/idle_block_state.gd" id="5_h23sc"]
+[ext_resource type="Script" uid="uid://daesahwue18ga" path="res://scripts/game/block/states/shake_block_state.gd" id="6_0nnbb"]
+[ext_resource type="Script" uid="uid://225w4sx3ll2q" path="res://scripts/game/block/states/fall_block_state.gd" id="7_iiloh"]
+[ext_resource type="Script" uid="uid://cejxownkmx316" path="res://scripts/game/block/states/float_block_state.gd" id="8_24uhq"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_uqv50"]
+atlas = ExtResource("1_cgrg5")
+region = Rect2(7, 10, 18, 12)
+
+[sub_resource type="Curve" id="Curve_1xlpn"]
+_data = [Vector2(0.07526882, 1), 0.0, 0.0, 0, 0, Vector2(0.66129035, 1), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_8jovo"]
+curve = SubResource("Curve_1xlpn")
+
+[sub_resource type="Curve" id="Curve_ojgcc"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.5645161, 1), 0.7591842, 0.7591842, 0, 0, Vector2(1, 0), -10.40361, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_jre5i"]
+curve = SubResource("Curve_ojgcc")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_bjqgx"]
+particle_flag_disable_z = true
+direction = Vector3(0, -1, 0)
+initial_velocity_min = 45.0
+initial_velocity_max = 76.71
+gravity = Vector3(0, 98, 0)
+scale_min = 0.049999997
+scale_max = 0.19999999
+scale_curve = SubResource("CurveTexture_jre5i")
+alpha_curve = SubResource("CurveTexture_8jovo")
+
+[node name="OreBlock" type="Node2D" unique_id=239447199]
+script = ExtResource("1_om4np")
+
+[node name="GPUParticles2D" type="GPUParticles2D" parent="." unique_id=1686238889]
+emitting = false
+texture = SubResource("AtlasTexture_uqv50")
+one_shot = true
+process_material = SubResource("ParticleProcessMaterial_bjqgx")
+
+[node name="Sprite2D" type="Sprite2D" parent="." unique_id=1769079010]
+texture_filter = 1
+texture = ExtResource("2_4kun4")
+
+[node name="States" type="Node" parent="." unique_id=1563762579]
+
+[node name="Idle" type="Node" parent="States" unique_id=1543690037]
+script = ExtResource("5_h23sc")
+
+[node name="Shake" type="Node" parent="States" unique_id=2091967535]
+script = ExtResource("6_0nnbb")
+
+[node name="Fall" type="Node" parent="States" unique_id=635575348]
+script = ExtResource("7_iiloh")
+
+[node name="Float" type="Node" parent="States" unique_id=1288777691]
+script = ExtResource("8_24uhq")

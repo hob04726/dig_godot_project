@@ -1,0 +1,53 @@
+[gd_scene format=3 uid="uid://bxr5ppwjqoi1p"]
+
+[ext_resource type="Texture2D" uid="uid://m1ij61qpt62p" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_ALL.png" id="1_jsumg"]
+[ext_resource type="Script" uid="uid://sarp6w0etfbs" path="res://scripts/ui/name_panel.gd" id="2_namepanel"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_eyvu8"]
+atlas = ExtResource("1_jsumg")
+region = Rect2(1, 737, 30, 14)
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_aur0f"]
+texture = SubResource("AtlasTexture_eyvu8")
+texture_margin_left = 3.0
+texture_margin_top = 3.0
+texture_margin_right = 3.0
+texture_margin_bottom = 5.0
+
+[node name="NamePanel" type="PanelContainer" unique_id=1624984552]
+layout_mode = 3
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 10.0
+offset_top = -76.0
+offset_right = 110.0
+offset_bottom = -10.0
+grow_vertical = 0
+size_flags_horizontal = 4
+size_flags_vertical = 4
+script = ExtResource("2_namepanel")
+world_name_edit = NodePath("PanelContainer/VBoxContainer/TextEdit")
+flavor_label = NodePath("PanelContainer/VBoxContainer/RichTextLabel")
+
+[node name="PanelContainer" type="PanelContainer" parent="." unique_id=113689088]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+theme_override_styles/panel = SubResource("StyleBoxTexture_aur0f")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="PanelContainer" unique_id=1257299407]
+layout_mode = 2
+
+[node name="TextEdit" type="TextEdit" parent="PanelContainer/VBoxContainer" unique_id=1824414160]
+layout_mode = 2
+text = "小世界"
+
+[node name="RichTextLabel" type="RichTextLabel" parent="PanelContainer/VBoxContainer" unique_id=579370044]
+layout_mode = 2
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+mouse_filter = 2
+theme_override_colors/default_color = Color(0.2, 0.2, 0.25, 1)
+theme_override_font_sizes/normal_font_size = 10

@@ -1,0 +1,5 @@
+[gd_scene format=3 uid="uid://dksdglrxlt21i"]
+
+[node name="Tile" type="Node2D" unique_id=583506837]
+
+[node name="Line2D" type="Line2D" parent="." unique_id=1181791512]

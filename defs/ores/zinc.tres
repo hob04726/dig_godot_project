@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="OreDef" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/game/block/ore_def.gd" id="1_def"]
+[ext_resource type="Texture2D" path="res://assets/blocks/png/ore_zinc_small.png" id="2_small"]
+[ext_resource type="Texture2D" path="res://assets/blocks/png/ore_zinc_large.png" id="3_large"]
+[ext_resource type="Texture2D" path="res://assets/blocks/png/ore_zinc_huge.png" id="4_huge"]
+
+[resource]
+script = ExtResource("1_def")
+id = &"zinc"
+display_name = "锌矿"
+texture = ExtResource("2_small")
+textures = Array[Texture2D]([ExtResource("2_small"), ExtResource("3_large"), ExtResource("4_huge")])
+rarity = 1
+spawn_weight = 20.0
+base_value = 20
+base_hp = 24
+max_level = 3
+value_growth = 2.0
+hp_growth = 1.5
+size_growth = 0.0

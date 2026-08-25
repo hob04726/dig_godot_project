@@ -1,0 +1,104 @@
+[gd_scene format=3 uid="uid://cthsjq3xk8ofi"]
+
+[ext_resource type="Texture2D" uid="uid://m1ij61qpt62p" path="res://assets/UI/Cute_Fantasy_UI/UI/UI_ALL.png" id="1_bg2cr"]
+[ext_resource type="Script" uid="uid://cx5b1rcf7k46m" path="res://scripts/ui/confirm_dialog.gd" id="2_conf"]
+[ext_resource type="Script" uid="uid://2ixvkbwgbc3n" path="res://scripts/ui/button_hover_fx.gd" id="3_hoverfx"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_3eypi"]
+atlas = ExtResource("1_bg2cr")
+region = Rect2(33, 738, 30, 13)
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_eyvu8"]
+content_margin_left = 10.0
+content_margin_top = 15.0
+content_margin_right = 10.0
+content_margin_bottom = 10.0
+texture = SubResource("AtlasTexture_3eypi")
+texture_margin_left = 3.0
+texture_margin_top = 3.0
+texture_margin_right = 3.0
+texture_margin_bottom = 4.0
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_k01qw"]
+atlas = ExtResource("1_bg2cr")
+region = Rect2(1, 721, 30, 14)
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_n5t4e"]
+texture = SubResource("AtlasTexture_k01qw")
+texture_margin_left = 4.0
+texture_margin_top = 4.0
+texture_margin_right = 4.0
+texture_margin_bottom = 6.0
+
+[node name="Confirm" type="Control" unique_id=352150707]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("2_conf")
+
+[node name="PanelContainer" type="PanelContainer" parent="." unique_id=1777514291]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -29.5
+offset_top = -20.0
+offset_right = 29.5
+offset_bottom = 20.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxTexture_eyvu8")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="PanelContainer" unique_id=26075856]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+theme_override_constants/separation = 15
+
+[node name="RichTextLabel" type="RichTextLabel" parent="PanelContainer/VBoxContainer" unique_id=1463824437]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+theme_override_constants/outline_size = 5
+text = "确认信息"
+fit_content = true
+autowrap_mode = 2
+horizontal_alignment = 1
+
+[node name="HBoxContainer" type="HBoxContainer" parent="PanelContainer/VBoxContainer" unique_id=568376337]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+theme_override_constants/separation = 38
+
+[node name="PanelContainer" type="PanelContainer" parent="PanelContainer/VBoxContainer/HBoxContainer" unique_id=1505473101]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxTexture_n5t4e")
+
+[node name="Button" type="Button" parent="PanelContainer/VBoxContainer/HBoxContainer/PanelContainer" unique_id=697594656]
+layout_mode = 2
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+text = "Yes"
+flat = true
+
+[node name="HoverFX" type="Node" parent="PanelContainer/VBoxContainer/HBoxContainer/PanelContainer" unique_id=697594657]
+script = ExtResource("3_hoverfx")
+
+[node name="PanelContainer2" type="PanelContainer" parent="PanelContainer/VBoxContainer/HBoxContainer" unique_id=899227222]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxTexture_n5t4e")
+
+[node name="Button" type="Button" parent="PanelContainer/VBoxContainer/HBoxContainer/PanelContainer2" unique_id=589949805]
+layout_mode = 2
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+text = "No"
+flat = true
+
+[node name="HoverFX" type="Node" parent="PanelContainer/VBoxContainer/HBoxContainer/PanelContainer2" unique_id=589949806]
+script = ExtResource("3_hoverfx")

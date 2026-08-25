@@ -1,0 +1,27 @@
+[gd_scene format=3 uid="uid://ctail0000001"]
+
+[ext_resource type="Script" uid="uid://587182nale7f" path="res://scripts/ui/tail.gd" id="1_tail"]
+
+[sub_resource type="Curve" id="Curve_ib8nf"]
+
+[node name="Tail" type="Node2D" unique_id=1214485323]
+script = ExtResource("1_tail")
+color = Color(1, 0.8509804, 0.14901961, 0.29411766)
+trail_length = 50
+width = 1.0
+max_alpha = 0.8
+preview_track_mouse = true
+
+[node name="Line2D" type="Line2D" parent="." unique_id=126396574]
+width = 3.0
+width_curve = SubResource("Curve_ib8nf")
+begin_cap_mode = 1
+end_cap_mode = 1
+
+[node name="Background" type="ColorRect" parent="." unique_id=985483429]
+offset_left = -600.0
+offset_top = -400.0
+offset_right = 600.0
+offset_bottom = 400.0
+mouse_filter = 2
+color = Color(0.12, 0.12, 0.16, 1)

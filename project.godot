@@ -13,16 +13,31 @@ config_version=5
 config/name="digdigdig"
 run/main_scene="uid://k8sd8xfg73hi"
 config/features=PackedStringArray("4.7", "Forward Plus")
-config/icon="res://icon.svg"
+boot_splash/show_image=false
+config/icon="uid://cisuppdj8qnxw"
+
+[autoload]
+
+Console="*res://scenes/ui/console.tscn"
+SoundManager="*res://scripts/audio/sound_manager.gd"
 
 [display]
 
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
+mouse_cursor/custom_image="uid://jutyets17h0m"
 
 [dotnet]
 
 project/assembly_name="digdigdig"
+
+[gui]
+
+theme/custom="res://themes/main_theme.tres"
+
+[internationalization]
+
+import_localized_strings_autodetect=false
 
 [layer_names]
 

@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="TileDef" format=3 uid="uid://c4vbkrar58gws"]
+
+[ext_resource type="Script" path="res://scripts/game/block/tile_def.gd" id="1_def"]
+[ext_resource type="Texture2D" uid="uid://cmixn1ftx5d5i" path="res://assets/blocks/png/ground_grass.png" id="2_tex"]
+
+[resource]
+script = ExtResource("1_def")
+id = &"grass"
+display_name = "草地"
+texture = ExtResource("2_tex")
+behavior = 9
+damage_multiplier = 1.5
+base_cost = 10

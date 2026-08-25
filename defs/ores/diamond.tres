@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="OreDef" format=3 uid="uid://3p72nwhyj15p"]
+
+[ext_resource type="Script" path="res://scripts/game/block/ore_def.gd" id="1_def"]
+[ext_resource type="Texture2D" uid="uid://cb6nrf756jdlc" path="res://assets/blocks/png/ore_diamond_small.png" id="2_small"]
+[ext_resource type="Texture2D" uid="uid://cvgl8ep0vqj33" path="res://assets/blocks/png/ore_diamond_large.png" id="3_large"]
+[ext_resource type="Texture2D" uid="uid://5j3rrbw4ts5g" path="res://assets/blocks/png/ore_diamond_huge.png" id="4_huge"]
+
+[resource]
+script = ExtResource("1_def")
+rarity = 3
+spawn_weight = 4.0
+base_value = 1500
+base_hp = 800
+size_growth = 0.0
+id = &"diamond"
+display_name = "钻石矿"
+texture = ExtResource("2_small")
+textures = Array[Texture2D]([ExtResource("2_small"), ExtResource("3_large"), ExtResource("4_huge")])

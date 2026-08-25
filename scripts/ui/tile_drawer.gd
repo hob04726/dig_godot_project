@@ -1,0 +1,438 @@
+extends PanelContainer
+## 右下角"抽屉"：点击把手按钮上拉面板（开关），
+## 点击地皮按钮进入对应地块的放置模式（再点一次取消）。
+## 地皮按钮静态预置在 main.tscn 的 HBoxContainer 里，这里按顺序连线。
+## 挂载在 main.tscn 的 CanvasLayer/BlowContainer 上。
+## 交互细节：
+## - 没有任何已解锁地块可放时，整个抽屉隐藏（有解锁后再出现）
+## - 地皮按钮 flat（无背景框）
+## - 悬停/选中：按钮以底边中心为支点平滑微放大（1.05，不上浮）；选中瞬间"压→冲→落"弹跳（0.94→1.15→1.05），再点一次平滑缩回默认
+## - 按钮宽度按贴图宽高比修正（贴图 256×352 → 约 26.2×36），等比显示不压扁
+## - 选中瞬间在按钮中心随机播放 scenes/vfx/impact.tscn 的一种冲击动画
+
+const OPEN_DURATION := 0.22
+## 与 main.tscn 中 HBoxContainer 里的地皮按钮一一对应
+const TILE_IDS: Array[StringName] = [
+	&"dirt", &"grass", &"stone", &"fire", &"water",
+	&"conveyor_belt_leftdown", &"conveyor_belt_leftup",
+	&"conveyor_belt_rightdown", &"conveyor_belt_rightup",
+	&"tnt_spawn", &"tnt",
+	&"upgrade", &"rarity",
+	&"spawn", &"push", &"pull",
+]
+const IMPACT_SCENE := preload("res://scenes/vfx/impact.tscn")
+## 按钮悬停/选中时的目标缩放（只大一点点，别喧宾夺主）；不再上浮（用户要求去掉）
+const BTN_ACTIVE_SCALE := 1.05
+const BTN_ACTIVE_LIFT := 0.0
+## 选中瞬间的弹跳：先小幅下压再冲过目标、最后回落（squash & stretch，
+## 悬停已把按钮抬到 1.05，单纯再放大 7% 几乎看不见，所以用"压→冲→落"让点击有反馈）
+const BTN_POP_DIP := 0.94
+const BTN_POP_DIP_TIME := 0.07
+const BTN_POP_SCALE := 1.15
+const BTN_POP_UP_TIME := 0.11
+const BTN_POP_DOWN_TIME := 0.16
+## 取消选中瞬间的缩小回弹：从选中态小幅下缩，再弹回悬停/默认态
+const BTN_CANCEL_POP_SHRINK := 0.92
+const BTN_CANCEL_POP_TIME := 0.09
+const BTN_CANCEL_RECOVER_TIME := 0.14
+## 悬停/选中的稳态动画：指数跟随速率（帧率无关，方向反转零突变）。
+## 不用 tween——鼠标快速进出时杀 tween 重启会初速度突变，看起来一顿一顿
+const BTN_FOLLOW_GROW := 14.0
+const BTN_FOLLOW_REVERT := 8.0
+## impact 特效相对天赋树用法缩小一点，适配 36px 按钮
+const IMPACT_SCALE := 0.5
+## 选中按钮的描边材质（全体按钮共享一份；thickness 单位是贴图像素，
+## 地块贴图 256×352 缩到 36px 按钮 → 8 ≈ 1 屏幕像素）
+const OUTLINE_SHADER := preload("res://scripts/shaders/outline.gdshader")
+const BTN_OUTLINE_THICKNESS := 8.0
+
+## 地皮按钮悬浮花费提示样式（与左上角精确余额提示一致）
+const COST_TIP_FONT_SIZE := 20
+const COST_TIP_OUTLINE_SIZE := 6
+const COST_TIP_BELOW_OFFSET := 40.0
+const COST_TIP_ABOVE_OFFSET := 12.0
+const COST_TIP_EDGE_PAD := 4.0
+
+var _game_manager: GameManager
+var _tile_buttons: Array[Button] = []
+var _btn_outlines: Array[TextureRect] = []   # 选中态描边覆盖层（与按钮同序）
+var _outline_material: ShaderMaterial = null
+## 每个按钮的动画状态（平行数组，与 _tile_buttons 同序）
+var _btn_scale: Array[float] = []
+var _btn_lift: Array[float] = []
+var _btn_base_y: Array[float] = []   # HBox 排版赋予的基准 position.y（排序时重记）
+var _btn_hovered: Array[bool] = []
+var _btn_selected: Array[bool] = []
+var _btn_pop_active: Array[bool] = []   # 选中弹跳进行中（期间指数跟随让位给弹跳 tween）
+var _btn_tweens: Array[Tween] = []
+var _open := false
+var _closed_top := -20.0
+var _closed_bottom := 27.0
+var _tween: Tween
+var _tooltip: RichTextLabel = null
+var _hovered_button_index := -1
+
+
+## SoundManager autoload 访问器（--script 测试模式下全局标识符不可编译，走节点查找）
+func _sm():
+	return get_node_or_null("/root/SoundManager")
+
+
+func _ready() -> void:
+	_game_manager = _find_game_manager()
+	if _game_manager == null:
+		push_warning("tile_drawer: 找不到 World（GameManager）节点")
+
+	# 面板/容器背景不拦截鼠标：点击穿透到游戏（按钮本身仍可点），
+	# 递归把容器背景设 IGNORE（兼容地皮按钮被套进 PanelContainer 的嵌套结构）
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	$VBoxContainer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ignore_containers($VBoxContainer)
+
+	# 记住"收起"时的位置（场景里初始值），开关时在它与打开位置间补间
+	_closed_top = offset_top
+	_closed_bottom = offset_bottom
+
+	# 把手按钮：尺寸写在 main.tscn 场景里（custom_minimum_size），
+	# 这样编辑器预览和运行时一致，不会因代码改尺寸导致重排版偏移
+	var toggle := $VBoxContainer/Button as Button
+	toggle.pressed.connect(_on_toggle_pressed)
+
+	var hbox := _find_hbox($VBoxContainer)
+	if hbox == null:
+		push_warning("tile_drawer: 找不到地皮按钮的 HBoxContainer")
+		return
+	# 按钮上移/放大可能溢出排版矩形，关掉裁剪避免被切
+	hbox.clip_contents = false
+	(hbox.get_parent() as Control).clip_contents = false
+	hbox.sort_children.connect(_on_hbox_sorted)
+	_outline_material = ShaderMaterial.new()
+	_outline_material.shader = OUTLINE_SHADER
+	_outline_material.set_shader_parameter("thickness", BTN_OUTLINE_THICKNESS)
+	for child in hbox.get_children():
+		if child is Button:
+			# 不用 toggle_mode：按钮按下态完全由 _on_selection_changed 同步，
+			# 避免原生 toggle 与 pressed 信号的触发顺序造成状态不一致
+			var index := _tile_buttons.size()
+			_tile_buttons.append(child)
+			_btn_scale.append(1.0)
+			_btn_lift.append(0.0)
+			_btn_base_y.append(0.0)
+			_btn_hovered.append(false)
+			_btn_selected.append(false)
+			_btn_pop_active.append(false)
+			_btn_tweens.append(null)
+			child.flat = true   # 无背景框，选中态靠"保持放大"表达
+			# 地块贴图是 256×352（宽高比 0.727），36×36 方按钮会把它竖向压扁 ~27%——
+			# 按贴图宽高比修正按钮宽度（36×256/352 ≈ 26.2），等比缩放，和世界里的样子一致
+			if child.icon != null:
+				var ts: Vector2 = child.icon.get_size()
+				if ts.y > 0.0:
+					child.custom_minimum_size = Vector2(36.0 * ts.x / ts.y, 36.0)
+			child.pivot_offset = Vector2(child.size.x * 0.5, child.size.y)   # 底边中心为支点
+			child.resized.connect(_on_btn_resized.bind(child))
+			child.pressed.connect(_on_tile_button_pressed.bind(index))
+			child.mouse_entered.connect(_on_btn_hover.bind(index, true))
+			child.mouse_exited.connect(_on_btn_hover.bind(index, false))
+			# 选中态描边：同图标的 TextureRect 覆盖层挂 outline 材质，默认隐藏，
+			# 由 _on_selection_changed 显隐；鼠标穿透、不参与排版。
+			# 注意：shader 的 border_clipping_fix 按"局部单位=贴图像素"做顶点外扩+UV 补偿，
+			# 所以覆盖层必须用贴图原始尺寸（256×352）再缩放到按钮大小，
+			# 直接 36×36 会让外扩（±8/36）与 UV 补偿（±8/256）不匹配，图标被放大 ~44%
+			var outline := TextureRect.new()
+			outline.texture = child.icon
+			outline.expand_mode = TextureRect.EXPAND_IGNORE_SIZE   # 取消"最小尺寸=贴图尺寸"钳制
+			outline.stretch_mode = TextureRect.STRETCH_SCALE      # 贴图原始尺寸铺满自身矩形
+			outline.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			outline.material = _outline_material
+			outline.visible = false
+			child.add_child(outline)
+			_fit_outline(outline, child)
+			child.resized.connect(_fit_outline.bind(outline, child))
+			_btn_outlines.append(outline)
+	if _tile_buttons.size() != TILE_IDS.size():
+		push_warning("tile_drawer: 地皮按钮 %d 个与 TILE_IDS %d 个不匹配"
+			% [_tile_buttons.size(), TILE_IDS.size()])
+
+	_refresh_visible()
+	if _game_manager:
+		_game_manager.tile_selection_changed.connect(_on_selection_changed)
+		# GameManager._ready 完成后再刷一次（时序兜底：万一本节点先于它 _ready）
+		_game_manager.initialized.connect(_refresh_visible)
+
+	_setup_cost_tooltip()
+
+
+## 创建地皮按钮悬浮花费提示标签，挂在抽屉所在 CanvasLayer 下避免被裁剪。
+## _ready 期间父节点可能也在装配子节点，用 call_deferred 延迟添加。
+func _setup_cost_tooltip() -> void:
+	_tooltip = RichTextLabel.new()
+	_tooltip.name = "TileCostTooltip"
+	_tooltip.bbcode_enabled = false
+	_tooltip.fit_content = true
+	_tooltip.scroll_active = false
+	_tooltip.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_tooltip.clip_contents = false
+	_tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tooltip.z_index = 4096
+	_tooltip.add_theme_font_size_override("normal_font_size", COST_TIP_FONT_SIZE)
+	_tooltip.add_theme_color_override("default_color", Color.WHITE)
+	_tooltip.add_theme_color_override("font_outline_color", Color.BLACK)
+	_tooltip.add_theme_constant_override("outline_size", COST_TIP_OUTLINE_SIZE)
+	_tooltip.visible = false
+	var layer := get_parent()
+	if layer != null:
+		layer.call_deferred("add_child", _tooltip)
+	else:
+		call_deferred("add_child", _tooltip)
+
+
+## 可靠查找 World（GameManager）：当前场景优先，兜底从根按名找（headless 脚本等场景）
+func _find_game_manager() -> GameManager:
+	var scene := get_tree().current_scene
+	if scene != null:
+		var found := scene.get_node_or_null("World") as GameManager
+		if found != null:
+			return found
+	return get_tree().root.find_child("World", true, false) as GameManager
+
+
+## 只显示已解锁的地块按钮（UNLOCK_TILE 天赋门控）：未解锁的不出现在抽屉里。
+## 隐藏不改变按钮↔TILE_IDS 的顺序映射，选中同步仍按原索引工作。
+## 一个可放地块都没有时，整个抽屉隐藏。
+func _refresh_visible() -> void:
+	var unlocked_count := 0
+	for i in _tile_buttons.size():
+		var unlocked := _game_manager != null and _game_manager.is_tile_unlocked(TILE_IDS[i])
+		_tile_buttons[i].visible = unlocked
+		if unlocked:
+			unlocked_count += 1
+	visible = unlocked_count > 0
+
+
+## 递归把容器背景设为 IGNORE（按钮本身保持可点）
+func _ignore_containers(node: Node) -> void:
+	for child in node.get_children():
+		if child is Container:
+			(child as Container).mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_ignore_containers(child)
+
+
+## 在 VBox 下递归找第一个 HBoxContainer（兼容嵌套层级变化）
+func _find_hbox(node: Node) -> HBoxContainer:
+	for child in node.get_children():
+		if child is HBoxContainer:
+			return child
+	for child in node.get_children():
+		if child is Container:
+			var found := _find_hbox(child)
+			if found:
+				return found
+	return null
+
+
+func _on_toggle_pressed() -> void:
+	_sm().play_sfx(&"menu_selection_click")
+	_open = not _open
+	# 关闭抽屉时退出放置模式：不再左键放置/右键删除地块
+	if not _open and _game_manager:
+		_game_manager.clear_tile_selection()
+	_animate_to(_open)
+
+
+## 打开：整块面板抬到屏幕底边之上；收起：回到只露把手的初始位置
+func _animate_to(open: bool) -> void:
+	var target_top := _closed_top
+	var target_bottom := _closed_bottom
+	if open:
+		var content_height := maxf(get_combined_minimum_size().y, offset_bottom - offset_top)
+		target_top = -content_height
+		target_bottom = 0.0
+
+	if _tween:
+		_tween.kill()
+	_tween = create_tween()
+	_tween.set_trans(Tween.TRANS_CUBIC)
+	_tween.set_ease(Tween.EASE_OUT)
+	_tween.tween_property(self, "offset_top", target_top, OPEN_DURATION)
+	_tween.parallel().tween_property(self, "offset_bottom", target_bottom, OPEN_DURATION)
+
+
+func _on_tile_button_pressed(button_index: int) -> void:
+	if _game_manager == null:
+		return
+	_game_manager.toggle_tile_selection(TILE_IDS[button_index])
+
+
+## 单选同步：当前选中的按钮按下，其余抬起；
+## 新选中的按钮播 impact 特效 + 弹跳放大（过冲后回落保持），取消选中的带音效+小特效+平滑缩回
+func _on_selection_changed(tile: TileDef) -> void:
+	for i in _tile_buttons.size():
+		var selected := tile != null and TILE_IDS[i] == tile.id
+		var was := _btn_selected[i]
+		_btn_selected[i] = selected
+		_tile_buttons[i].button_pressed = selected
+		_btn_outlines[i].visible = selected or _btn_hovered[i]   # 选中/悬浮显示描边
+		if selected and not was:
+			_sm().play_sfx(&"below_button_select")   # 选中音效
+			_play_impact(_tile_buttons[i])
+			_pop_button(i)
+		elif not selected and was:
+			_sm().play_sfx(&"menu_selection_click")   # 取消音效
+			_play_impact(_tile_buttons[i], 0.6)       # 取消小特效
+			_pop_button_cancel(i)                     # 取消后平滑缩小
+
+
+# ==================== 按钮悬停/选中动效 ====================
+
+func _on_btn_hover(index: int, hovered: bool) -> void:
+	_btn_hovered[index] = hovered
+	_btn_outlines[index].visible = hovered or _btn_selected[index]   # 悬浮/选中都显示描边
+	_hovered_button_index = index if hovered else -1
+	_update_cost_tooltip()
+
+
+## 更新悬浮花费提示的文本与可见性
+func _update_cost_tooltip() -> void:
+	if _tooltip == null or _game_manager == null:
+		return
+	if _hovered_button_index < 0 or _hovered_button_index >= _tile_buttons.size():
+		_tooltip.visible = false
+		return
+	var tile_id := TILE_IDS[_hovered_button_index]
+	var tile_def := _game_manager.db.get_tile(tile_id)
+	if tile_def == null:
+		_tooltip.visible = false
+		return
+	var count := _game_manager.grid.get_placed_count(tile_id)
+	var cost := TilePricing.placement_cost(tile_def, count)
+	_tooltip.text = "购买一个：%s$" % cost.to_compact_string()
+	_tooltip.visible = true
+
+
+## 每帧指数跟随：悬停/选中的稳态（缩放+上移）向目标平滑逼近。
+## 方向反转时没有 tween 重启的初速度突变，鼠标快速进出也丝滑。
+func _process(delta: float) -> void:
+	if _tooltip != null and _tooltip.visible:
+		_tooltip.reset_size()
+		var mouse := get_global_mouse_position()
+		var vp := get_viewport_rect().size
+		var margin := COST_TIP_EDGE_PAD + COST_TIP_OUTLINE_SIZE
+		# 默认显示在鼠标下方；若下方空间不足（抽屉在屏幕底部常见），则显示在鼠标上方
+		var below_y := mouse.y + COST_TIP_BELOW_OFFSET
+		var above_y := mouse.y - _tooltip.size.y - COST_TIP_ABOVE_OFFSET
+		var pos := Vector2(
+			mouse.x - _tooltip.size.x * 0.5,
+			below_y if below_y + _tooltip.size.y + margin <= vp.y else above_y
+		)
+		pos.x = clampf(pos.x, margin, maxf(margin, vp.x - _tooltip.size.x - margin))
+		pos.y = clampf(pos.y, margin, maxf(margin, vp.y - _tooltip.size.y - margin))
+		_tooltip.position = pos
+	for i in _tile_buttons.size():
+		if _btn_pop_active[i]:
+			continue   # 弹跳 tween 正在驱动这个按钮
+		var active: bool = _btn_hovered[i] or _btn_selected[i]
+		var target := Vector2(BTN_ACTIVE_SCALE if active else 1.0, BTN_ACTIVE_LIFT if active else 0.0)
+		var from := Vector2(_btn_scale[i], _btn_lift[i])
+		if from.is_equal_approx(target):
+			if from != target:
+				_apply_button_transform(target, i)   # 吸附端点
+			continue
+		var speed := BTN_FOLLOW_GROW if active else BTN_FOLLOW_REVERT
+		_apply_button_transform(from.lerp(target, 1.0 - exp(-speed * delta)), i)
+
+
+## 按钮尺寸确定后，把缩放支点固定在底边中心（放大即"向上长"）
+func _on_btn_resized(btn: Button) -> void:
+	btn.pivot_offset = Vector2(btn.size.x * 0.5, btn.size.y)
+
+
+## 描边覆盖层用贴图原始尺寸 + 缩放铺满按钮（让 shader 的顶点外扩与 UV 补偿匹配），
+## 按钮尺寸变化（布局/抽屉动画）时重算
+func _fit_outline(outline: TextureRect, btn: Button) -> void:
+	var tex_size := outline.texture.get_size()
+	outline.size = tex_size
+	outline.scale = Vector2(btn.size.x / tex_size.x, btn.size.y / tex_size.y)
+	outline.position = Vector2.ZERO
+
+
+## HBox 重排版（开关抽屉、按钮显隐）时重记每个按钮的基准 y
+func _on_hbox_sorted() -> void:
+	for i in _tile_buttons.size():
+		# 当前 position.y = 基准 - 已施加的上移，反推基准
+		_btn_base_y[i] = _tile_buttons[i].position.y + _btn_lift[i]
+
+
+## 选中瞬间的弹跳：当前状态 → 小幅下压 → 冲过目标 → 回落保持（一次性 tween）。
+func _pop_button(index: int) -> void:
+	var old := _btn_tweens[index]
+	if old and old.is_valid():
+		old.kill()
+	_btn_pop_active[index] = true
+	var from := Vector2(_btn_scale[index], _btn_lift[index])
+	var dip := Vector2(BTN_POP_DIP, BTN_ACTIVE_LIFT * 0.5)
+	var peak := Vector2(BTN_POP_SCALE, BTN_ACTIVE_LIFT)
+	var settle := Vector2(BTN_ACTIVE_SCALE, BTN_ACTIVE_LIFT)
+	var t := create_tween()
+	t.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	t.tween_method(_apply_button_transform.bind(index), from, dip, BTN_POP_DIP_TIME)
+	t.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.tween_method(_apply_button_transform.bind(index), dip, peak, BTN_POP_UP_TIME)
+	t.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
+	t.tween_method(_apply_button_transform.bind(index), peak, settle, BTN_POP_DOWN_TIME)
+	t.tween_callback(_on_pop_finished.bind(index))
+	_btn_tweens[index] = t
+
+
+## 取消选中瞬间的回弹：当前状态 → 小幅下缩 → 弹回悬停/默认态（一次性 tween）
+func _pop_button_cancel(index: int) -> void:
+	var old := _btn_tweens[index]
+	if old and old.is_valid():
+		old.kill()
+	_btn_pop_active[index] = true
+	var from := Vector2(_btn_scale[index], _btn_lift[index])
+	var shrink := Vector2(BTN_CANCEL_POP_SHRINK, BTN_ACTIVE_LIFT * 0.3)
+	# 取消后若仍悬停则回到 1.05，否则回到 1.0
+	var hovered := _btn_hovered[index]
+	var settle := Vector2(BTN_ACTIVE_SCALE if hovered else 1.0, BTN_ACTIVE_LIFT if hovered else 0.0)
+	var t := create_tween()
+	t.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	t.tween_method(_apply_button_transform.bind(index), from, shrink, BTN_CANCEL_POP_TIME)
+	t.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.tween_method(_apply_button_transform.bind(index), shrink, settle, BTN_CANCEL_RECOVER_TIME)
+	t.tween_callback(_on_pop_finished.bind(index))
+	_btn_tweens[index] = t
+
+
+func _on_pop_finished(index: int) -> void:
+	_btn_pop_active[index] = false
+
+
+func _apply_button_transform(v: Vector2, index: int) -> void:
+	_btn_scale[index] = v.x
+	_btn_lift[index] = v.y
+	var btn := _tile_buttons[index]
+	btn.scale = Vector2.ONE * v.x
+	btn.position.y = _btn_base_y[index] - v.y
+
+
+## 选中/取消瞬间：在按钮中心随机播放 impact 的一种冲击动画，播完（或超时兜底）自毁
+func _play_impact(btn: Button, scale_mul := 1.0) -> void:
+	var impact := IMPACT_SCENE.instantiate() as Node2D
+	add_child(impact)
+	impact.z_index = 20   # 画在按钮之上
+	impact.scale = Vector2.ONE * IMPACT_SCALE * scale_mul
+	impact.global_position = btn.get_global_rect().get_center()
+	var sprite := impact.get_node_or_null("AnimatedSprite2D") as AnimatedSprite2D
+	if sprite == null or sprite.sprite_frames == null:
+		impact.queue_free()
+		return
+	var names := sprite.sprite_frames.get_animation_names()
+	if names.is_empty():
+		impact.queue_free()
+		return
+	sprite.frame = 0
+	sprite.play(names[randi() % names.size()])
+	sprite.animation_finished.connect(impact.queue_free)
+	# 兜底：动画最长约 0.35s，超时也释放（防止意外残留）
+	get_tree().create_timer(0.8).timeout.connect(impact.queue_free)

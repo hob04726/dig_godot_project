@@ -1,11 +1,11 @@
-﻿extends Camera2D
+extends Camera2D
 
 
 @export var zoom_speed := 0.15
 @export var zoom_smooth := 8.0
 
-@export var min_zoom := 0.5
-@export var max_zoom := 3.0
+@export var min_zoom := 0.3
+@export var max_zoom := 5.0
 
 
 @export var pan_smooth := 10.0

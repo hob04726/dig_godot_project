@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://krkw4me0qt42"
+path="res://.godot/imported/remove_block.wav-d49b07857e160ea9df5cdd31cd8a8fe6.sample"
+
+[deps]
+
+source_file="res://assets/sound/Sound Effect/remove_block.wav"
+dest_files=["res://.godot/imported/remove_block.wav-d49b07857e160ea9df5cdd31cd8a8fe6.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=false
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=0
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=2

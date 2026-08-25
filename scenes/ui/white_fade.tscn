@@ -1,0 +1,17 @@
+[gd_scene format=3 uid="uid://c1m8wqf8vqx8e"]
+
+[ext_resource type="Script" path="res://scripts/ui/white_fade.gd" id="1_whitefade"]
+
+[node name="WhiteFade" type="CanvasLayer"]
+script = ExtResource("1_whitefade")
+
+[node name="ColorRect" type="ColorRect" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = 0.0
+offset_bottom = 0.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(1, 1, 1, 1)

@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://cgnjk1mveuw61"
+path="res://.godot/imported/coin_particle.ogg-42a990b7a4f3529b4034906468aeed83.oggvorbisstr"
+
+[deps]
+
+source_file="res://assets/sound/Sound Effect/coin_particle.ogg"
+dest_files=["res://.godot/imported/coin_particle.ogg-42a990b7a4f3529b4034906468aeed83.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

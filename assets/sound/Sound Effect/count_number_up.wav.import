@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://clxta2ocedf4a"
+path="res://.godot/imported/count_number_up.wav-8bf4460408846ba7eef63835e2882927.sample"
+
+[deps]
+
+source_file="res://assets/sound/Sound Effect/count_number_up.wav"
+dest_files=["res://.godot/imported/count_number_up.wav-8bf4460408846ba7eef63835e2882927.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=false
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=0
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=2

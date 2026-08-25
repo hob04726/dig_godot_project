@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="TileDef" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/game/block/tile_def.gd" id="1_def"]
+[ext_resource type="Texture2D" path="res://assets/blocks/png/ground_water.png" id="2_tex"]
+
+[resource]
+script = ExtResource("1_def")
+id = &"water"
+display_name = "水域"
+texture = ExtResource("2_tex")
+behavior = 1
+base_cost = 250

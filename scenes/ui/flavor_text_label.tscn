@@ -1,0 +1,22 @@
+[gd_scene format=3 uid="uid://mtgxi8fk41qy"]
+
+[ext_resource type="Script" uid="uid://cydcetkgffjlu" path="res://scripts/ui/flavor_text_label.gd" id="1_flavor"]
+
+[node name="FlavorTextLabel" type="Control" node_paths=PackedStringArray("label")]
+custom_minimum_size = Vector2(300, 18)
+offset_right = 300.0
+offset_bottom = 18.0
+script = ExtResource("1_flavor")
+label = NodePath("RichTextLabel")
+
+[node name="RichTextLabel" type="RichTextLabel" parent="."]
+layout_mode = 0
+offset_right = 300.0
+offset_bottom = 18.0
+bbcode_enabled = true
+scroll_active = false
+mouse_filter = 2
+theme_override_colors/default_color = Color(0.2, 0.2, 0.25, 1)
+theme_override_colors/font_outline_color = Color(1, 1, 1, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/normal_font_size = 10
